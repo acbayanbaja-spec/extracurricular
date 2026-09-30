@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { motion } from 'framer-motion';
 import { ApiClient } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import {
@@ -75,7 +76,12 @@ export default function AdminDashboardPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <motion.div 
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+      >
         <div>
           <div className="flex items-center gap-2 text-primary-600 text-xs font-bold uppercase tracking-wider mb-1">
             <ShieldCheck className="h-4 w-4" />
@@ -91,53 +97,58 @@ export default function AdminDashboardPage() {
 
         {/* Export Buttons */}
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => handleExport('attendance')} className="text-xs font-bold">
+          <Button variant="outline" size="sm" onClick={() => handleExport('attendance')} className="text-xs font-bold hover:scale-[1.02] transition-transform">
             <Download className="mr-1.5 h-3.5 w-3.5" /> Export Attendance CSV
           </Button>
-          <Button variant="outline" size="sm" onClick={() => handleExport('registrations')} className="text-xs font-bold">
+          <Button variant="outline" size="sm" onClick={() => handleExport('registrations')} className="text-xs font-bold hover:scale-[1.02] transition-transform">
             <Download className="mr-1.5 h-3.5 w-3.5" /> Export Registrations CSV
           </Button>
         </div>
-      </div>
+      </motion.div>
 
       {/* KPI Stats Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+      <motion.div 
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5"
+      >
+        <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm hover:border-primary-500/40 hover:shadow-md transition-all group">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total Students</p>
-          <p className="text-2xl font-black text-foreground mt-0.5">{kpis.totalStudents || 4}</p>
+          <p className="text-2xl font-black text-foreground mt-0.5 group-hover:text-primary-600 transition-colors">{kpis.totalStudents || 4}</p>
           <span className="text-[10px] text-muted-foreground">Enrolled Learners</span>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm hover:border-primary-500/40 hover:shadow-md transition-all group">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Active Clubs</p>
-          <p className="text-2xl font-black text-primary-600 mt-0.5">{kpis.totalActivities || 7}</p>
+          <p className="text-2xl font-black text-primary-600 mt-0.5 group-hover:scale-105 transition-transform origin-left">{kpis.totalActivities || 7}</p>
           <span className="text-[10px] text-muted-foreground">Published Activities</span>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm hover:border-indigo-500/40 hover:shadow-md transition-all group">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Registrations</p>
-          <p className="text-2xl font-black text-indigo-600 mt-0.5">{kpis.totalRegistrations || 9}</p>
+          <p className="text-2xl font-black text-indigo-600 mt-0.5 group-hover:scale-105 transition-transform origin-left">{kpis.totalRegistrations || 9}</p>
           <span className="text-[10px] text-muted-foreground">Applications logged</span>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm hover:border-emerald-500/40 hover:shadow-md transition-all group">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Avg Attendance</p>
-          <p className="text-2xl font-black text-emerald-600 mt-0.5">{kpis.averageAttendanceRate || 94.1}%</p>
+          <p className="text-2xl font-black text-emerald-600 mt-0.5 group-hover:scale-105 transition-transform origin-left">{kpis.averageAttendanceRate || 94.1}%</p>
           <span className="text-[10px] text-muted-foreground">Across all sessions</span>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm hover:border-amber-500/40 hover:shadow-md transition-all group">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Badges Awarded</p>
-          <p className="text-2xl font-black text-amber-500 mt-0.5">{kpis.achievementsAwarded || 5}</p>
+          <p className="text-2xl font-black text-amber-500 mt-0.5 group-hover:scale-105 transition-transform origin-left">{kpis.achievementsAwarded || 5}</p>
           <span className="text-[10px] text-muted-foreground">Merit honors</span>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm hover:border-rose-500/40 hover:shadow-md transition-all group">
           <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Certificates</p>
-          <p className="text-2xl font-black text-rose-500 mt-0.5">{kpis.certificatesIssued || 3}</p>
+          <p className="text-2xl font-black text-rose-500 mt-0.5 group-hover:scale-105 transition-transform origin-left">{kpis.certificatesIssued || 3}</p>
           <span className="text-[10px] text-muted-foreground">Verified credentials</span>
         </div>
-      </div>
+      </motion.div>
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

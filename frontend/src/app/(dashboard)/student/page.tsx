@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+import { motion } from 'framer-motion';
 import { ApiClient } from '@/lib/api';
 import { Activity, RecommendedActivity, NotificationItem } from '@/types';
 import { ActivityCard } from '@/components/activities/ActivityCard';
@@ -76,7 +77,13 @@ export default function StudentDashboard() {
   return (
     <div className="space-y-8">
       {/* Top Welcome Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-primary-900 via-indigo-900 to-primary-800 p-6 sm:p-8 text-white shadow-xl">
+      <motion.div 
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
+        className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-primary-900 via-indigo-900 to-primary-800 p-6 sm:p-8 text-white shadow-xl shadow-primary-950/20"
+      >
+        <div className="absolute top-0 right-0 -mr-20 -mt-20 w-72 h-72 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div>
             <div className="inline-flex items-center gap-1.5 rounded-full bg-white/10 backdrop-blur-md px-3 py-1 text-xs font-semibold text-indigo-200 border border-white/10 mb-2">
@@ -94,73 +101,78 @@ export default function StudentDashboard() {
           <div className="flex flex-wrap items-center gap-2.5">
             <Button
               onClick={() => setIsQrModalOpen(true)}
-              className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/25"
+              className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/25 border-0 hover:scale-[1.02] transition-transform"
               size="sm"
             >
               <QrCode className="mr-1.5 h-4 w-4" /> Scan Attendance QR
             </Button>
             <Link href="/student/portfolio">
-              <Button variant="secondary" size="sm" className="font-semibold bg-white/20 hover:bg-white/30 text-white border-0">
+              <Button variant="secondary" size="sm" className="font-semibold bg-white/20 hover:bg-white/30 text-white border-0 hover:scale-[1.02] transition-transform">
                 <User className="mr-1.5 h-4 w-4" /> My Portfolio
               </Button>
             </Link>
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {/* Quick KPI Stat Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <motion.div 
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+        className="grid grid-cols-2 md:grid-cols-4 gap-4"
+      >
         {/* Attendance Rate */}
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm hover:border-amber-500/40 hover:shadow-md transition-all group">
           <div className="flex items-center justify-between text-muted-foreground mb-1">
             <span className="text-xs font-bold uppercase tracking-wider">Attendance Rate</span>
-            <div className="flex items-center gap-1 text-amber-500 text-xs font-bold">
-              <Flame className="h-3.5 w-3.5 fill-amber-500" />
-              <span>{student?.streak_count || 0} streak</span>
+            <div className="flex items-center gap-1 text-amber-500 text-xs font-bold bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-500/20">
+              <Flame className="h-3.5 w-3.5 fill-amber-500 animate-pulse" />
+              <span>{student?.streak_count || 1} streak</span>
             </div>
           </div>
-          <p className="text-2xl sm:text-3xl font-black text-foreground">
+          <p className="text-2xl sm:text-3xl font-black text-foreground group-hover:text-amber-500 transition-colors">
             {student?.attendance_rate || 94.5}%
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">Reliable attendee across sessions</p>
         </div>
 
         {/* Activities Joined */}
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm hover:border-primary-500/40 hover:shadow-md transition-all group">
           <div className="flex items-center justify-between text-muted-foreground mb-1">
             <span className="text-xs font-bold uppercase tracking-wider">Activities</span>
-            <Compass className="h-4 w-4 text-primary-500" />
+            <Compass className="h-4 w-4 text-primary-500 group-hover:rotate-45 transition-transform" />
           </div>
-          <p className="text-2xl sm:text-3xl font-black text-foreground">
+          <p className="text-2xl sm:text-3xl font-black text-foreground group-hover:text-primary-600 transition-colors">
             {myActivities.length}
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">Registered & Completed</p>
         </div>
 
         {/* Badges Collected */}
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm hover:border-amber-500/40 hover:shadow-md transition-all group">
           <div className="flex items-center justify-between text-muted-foreground mb-1">
             <span className="text-xs font-bold uppercase tracking-wider">Badges</span>
-            <Award className="h-4 w-4 text-amber-500" />
+            <Award className="h-4 w-4 text-amber-500 group-hover:scale-110 transition-transform" />
           </div>
-          <p className="text-2xl sm:text-3xl font-black text-foreground">
+          <p className="text-2xl sm:text-3xl font-black text-foreground group-hover:text-amber-500 transition-colors">
             {unlockedBadges.length} / {badges.length || 8}
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">Recognized achievements</p>
         </div>
 
         {/* Total Points */}
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-border/80 bg-card p-4 shadow-sm hover:border-emerald-500/40 hover:shadow-md transition-all group">
           <div className="flex items-center justify-between text-muted-foreground mb-1">
             <span className="text-xs font-bold uppercase tracking-wider">Growth Points</span>
-            <TrendingUp className="h-4 w-4 text-emerald-500" />
+            <TrendingUp className="h-4 w-4 text-emerald-500 group-hover:translate-y-[-2px] transition-transform" />
           </div>
-          <p className="text-2xl sm:text-3xl font-black text-foreground">
+          <p className="text-2xl sm:text-3xl font-black text-foreground group-hover:text-emerald-600 transition-colors">
             {student?.total_points || 380}
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">Extracurricular merit score</p>
         </div>
-      </div>
+      </motion.div>
 
       {/* Main 2-Column Split: Development Journey & Recommended Activities */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
