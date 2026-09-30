@@ -11,6 +11,9 @@ RUN npm ci
 # Copy backend source code
 COPY backend/ ./
 
+# Pre-seed embedded database during build so fallback DB has all CNHS accounts
+RUN npm run seed
+
 # Build production TypeScript code
 RUN npm run build
 
@@ -30,6 +33,7 @@ RUN npm ci --only=production
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/src/database/schema.sql ./dist/database/schema.sql
+COPY --from=builder /app/cnhs_extracurricular.db ./cnhs_extracurricular.db
 
 RUN chown -R nodejs:nodejs /app
 

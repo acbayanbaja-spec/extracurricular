@@ -7,6 +7,7 @@ import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '.
 import { sendError, sendSuccess } from '../utils/response';
 import { authenticateToken, AuthenticatedRequest } from '../middlewares/auth';
 import { AuditService } from '../services/audit.service';
+import { runSeeder } from '../database/seed';
 
 const router = Router();
 
@@ -15,9 +16,26 @@ const loginSchema = z.object({
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
+// Self-healing Seed Trigger Endpoint
+router.post('/seed', async (_req: Request, res: Response): Promise<void> => {
+  try {
+    await runSeeder();
+    sendSuccess(res, { status: 'SEEDED' }, 'Database seeded with Centrala National High School initial records');
+  } catch (err: any) {
+    sendError(res, err.message, 500);
+  }
+});
+
 router.post('/login', async (req: Request, res: Response): Promise<void> => {
   try {
     const { email, password } = loginSchema.parse(req.body);
+
+    // Self-healing check: verify if admin/seed data exists
+    const adminCheck = await db.get('SELECT id FROM users WHERE email = ?', ['admin@cnhs.edu.ph']).catch(() => null);
+    if (!adminCheck) {
+      console.log('🌱 [Auth Self-Heal] Database missing seed records. Auto-running seeder...');
+      await runSeeder().catch((e) => console.error('Auto-seed error:', e));
+    }
 
     const user = await db.get(
       'SELECT id, email, password_hash, role, status, first_name, last_name, avatar_url, phone FROM users WHERE email = ?',

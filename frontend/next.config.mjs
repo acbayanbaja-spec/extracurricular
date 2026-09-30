@@ -10,12 +10,11 @@ const nextConfig = {
     ],
   },
   async rewrites() {
+    const backendTarget = (process.env.NEXT_PUBLIC_API_URL || "https://extracurricular-sc5rlfdq.b4a.run/api").replace(/\/$/, "");
     return [
       {
         source: "/api/:path*",
-        destination: process.env.NEXT_PUBLIC_BACKEND_URL
-          ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/:path*`
-          : "http://localhost:5000/api/:path*",
+        destination: `${backendTarget}/:path*`,
       },
     ];
   },
