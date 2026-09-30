@@ -14,9 +14,11 @@ class DatabaseManager {
     const dbUrl = config.databaseUrl.trim();
     if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
       this.isPostgres = true;
+      // Strip sslmode from URI so pg-connection-string doesn't override rejectUnauthorized: false
+      const cleanDbUrl = dbUrl.replace(/([?&])sslmode=[^&]+(&|$)/, '$1').replace(/\?$/, '');
       this.pgPool = new Pool({
-        connectionString: dbUrl,
-        ssl: dbUrl.includes('supabase') || dbUrl.includes('render') ? { rejectUnauthorized: false } : undefined,
+        connectionString: cleanDbUrl,
+        ssl: { rejectUnauthorized: false },
       });
       console.log('✅ [DatabaseManager] Using PostgreSQL database connection');
     } else {
