@@ -138,7 +138,25 @@ cd frontend
 npm run dev
 ```
 
-Navigate to [http://localhost:3000](http://localhost:3000) in your web browser.
+### 4. Running with Docker Compose (Alternative 1-Command Startup)
+For complete containerized local deployment:
+```bash
+docker-compose up --build
+```
+This automatically spins up:
+- The Backend REST API container on `http://localhost:5000`
+- The Next.js 14 Frontend container on `http://localhost:3000`
+
+---
+
+## 🧪 Automated Testing & Sanity Verification
+
+The project includes an automated backend smoke test suite verifying database connectivity, JWT authentication, password hashing, and attendance metrics:
+```bash
+# Run smoke tests & integrity verification
+npm test
+```
+The test suite ensures zero runtime regression across database models and authentication helpers.
 
 ---
 
