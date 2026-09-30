@@ -3,24 +3,19 @@ import { toast } from 'sonner';
 export const LIVE_BACKEND_URL = 'https://extracurricular-sc5rlfdq.b4a.run/api';
 
 export function getBaseApiUrl(): string {
-  const envUrl = process.env.NEXT_PUBLIC_API_URL;
-
   // If in browser context
   if (typeof window !== 'undefined') {
     const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-    // If running in production (Vercel or custom domain)
+    // In production on Vercel or any live domain, use same-origin /api proxy route to eliminate CORS completely
     if (!isLocalHost) {
-      if (envUrl && !envUrl.includes('localhost')) {
-        return envUrl.replace(/\/$/, '');
-      }
-      return LIVE_BACKEND_URL;
+      return '/api';
     }
   }
 
   // Local development fallback
-  if (envUrl) {
-    return envUrl.replace(/\/$/, '');
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '');
   }
 
   return 'http://localhost:5000/api';
@@ -40,7 +35,8 @@ export class ApiClient {
     const { params, headers, ...rest } = options;
     const baseUrl = getBaseApiUrl();
 
-    let url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    let url = endpoint.startsWith('http') ? endpoint : `${baseUrl}${cleanEndpoint}`;
 
     if (params) {
       const searchParams = new URLSearchParams();
@@ -71,21 +67,21 @@ export class ApiClient {
         headers: reqHeaders,
       });
     } catch (primaryError: any) {
-      // Automatic Cloud Failover: if localhost or primary URL fails in browser, retry against live cloud backend
+      // Automatic Cloud Failover: if same-origin /api or primary fetch fails, retry directly against live Back4App URL
       if (!url.startsWith(LIVE_BACKEND_URL) && typeof window !== 'undefined') {
         try {
-          console.warn(`[ApiClient] Primary fetch failed (${primaryError.message}). Attempting failover to live cloud backend...`);
-          const fallbackUrl = `${LIVE_BACKEND_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+          console.warn(`[ApiClient] Primary fetch failed (${primaryError.message}). Attempting direct failover to Back4App cloud backend...`);
+          const fallbackUrl = `${LIVE_BACKEND_URL}${cleanEndpoint}`;
           response = await fetch(fallbackUrl, {
             ...rest,
             headers: reqHeaders,
           });
         } catch (fallbackError: any) {
           console.error(`[ApiClient Failover Error] ${endpoint}:`, fallbackError.message);
-          throw new Error('Connection failed: Unable to connect to CNHS API service. Please verify your internet connection.');
+          throw new Error('Backend service is waking up. Please retry in a few moments.');
         }
       } else {
-        throw new Error('Connection failed: Unable to connect to CNHS API service. Please verify your internet connection.');
+        throw new Error('Backend service is waking up. Please retry in a few moments.');
       }
     }
 
