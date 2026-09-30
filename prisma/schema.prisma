@@ -1,0 +1,499 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  ADMINISTRATOR
+  TEACHER
+  STUDENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ActivityStatus {
+  Draft
+  Pending
+  Published
+  Ongoing
+  Completed
+  Cancelled
+}
+
+enum RegistrationState {
+  Registration_Open   @map("Registration Open")
+  Registration_Closed @map("Registration Closed")
+}
+
+enum RegistrationStatus {
+  Pending
+  Approved
+  Rejected
+  Waitlisted
+  Cancelled
+  Completed
+}
+
+enum AttendanceStatus {
+  Present
+  Absent
+  Late
+  Excused
+}
+
+enum BadgeTier {
+  Bronze
+  Silver
+  Gold
+  Platinum
+}
+
+model User {
+  id           String      @id @default(uuid())
+  email        String      @unique
+  passwordHash String      @map("password_hash")
+  role         Role
+  status       UserStatus  @default(ACTIVE)
+  firstName    String      @map("first_name")
+  lastName     String      @map("last_name")
+  avatarUrl    String?     @map("avatar_url")
+  phone        String?
+  createdAt    DateTime    @default(now()) @map("created_at")
+  updatedAt    DateTime    @updatedAt @map("updated_at")
+
+  student       Student?
+  teacher       Teacher?
+  administrator Administrator?
+  notifications Notification[]
+  announcements Announcement[]
+  auditLogs     AuditLog[]
+
+  @@map("users")
+}
+
+model Student {
+  id              String   @id @default(uuid())
+  userId          String   @unique @map("user_id")
+  studentIdNumber String   @unique @map("student_id_number")
+  gradeLevel      String   @map("grade_level")
+  section         String
+  trackStrand     String?  @map("track_strand")
+  guardianName    String?  @map("guardian_name")
+  guardianPhone   String?  @map("guardian_phone")
+  bio             String?
+  attendanceRate  Decimal  @default(0.00) @map("attendance_rate") @db.Decimal(5, 2)
+  streakCount     Int      @default(0) @map("streak_count")
+  totalPoints     Int      @default(0) @map("total_points")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registrations        Registration[]
+  attendanceRecords    AttendanceRecord[]
+  participationRecords ParticipationRecord[]
+  studentAchievements  StudentAchievement[]
+  studentBadges        StudentBadge[]
+  studentMilestones    StudentMilestone[]
+  certificates         Certificate[]
+  interests            StudentInterest[]
+  skills               StudentSkill[]
+
+  @@map("students")
+}
+
+model Teacher {
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id")
+  employeeId     String   @unique @map("employee_id")
+  department     String
+  title          String
+  specialization String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizations ClubOrganization[]
+  activities    Activity[]
+
+  @@map("teachers")
+}
+
+model Administrator {
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("user_id")
+  department  String   @default("Office of the Principal")
+  permissions String   @default("[\"all\"]")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("administrators")
+}
+
+model Category {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  slug         String   @unique
+  description  String?
+  icon         String   @default("Tag")
+  color        String   @default("#4F46E5")
+  displayOrder Int      @default(0) @map("display_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  activities    Activity[]
+  organizations ClubOrganization[]
+
+  @@map("categories")
+}
+
+model ClubOrganization {
+  id              String   @id @default(uuid())
+  name            String   @unique
+  code            String   @unique
+  description     String
+  adviserId       String?  @map("adviser_id")
+  categoryId      String?  @map("category_id")
+  logoUrl         String?  @map("logo_url")
+  bannerUrl       String?  @map("banner_url")
+  meetingSchedule String?  @map("meeting_schedule")
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  adviser    Teacher?   @relation(fields: [adviserId], references: [id], onDelete: SetNull)
+  category   Category?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  activities Activity[]
+
+  @@map("clubs_organizations")
+}
+
+model Activity {
+  id                     String            @id @default(uuid())
+  title                  String
+  slug                   String            @unique
+  description            String
+  categoryId             String?           @map("category_id")
+  organizationId         String?           @map("organization_id")
+  organizerId            String?           @map("organizer_id")
+  location               String
+  date                   DateTime          @db.Date
+  startTime              String            @map("start_time")
+  endTime                String            @map("end_time")
+  registrationDeadline   DateTime          @map("registration_deadline")
+  maxParticipants        Int               @default(30) @map("max_participants")
+  currentParticipants    Int               @default(0) @map("current_participants")
+  eligibilityGradeLevels String            @default("[\"Grade 7\",\"Grade 8\",\"Grade 9\",\"Grade 10\",\"Grade 11\",\"Grade 12\"]") @map("eligibility_grade_levels")
+  requiredSkills         String            @default("[]") @map("required_skills")
+  bannerImage            String?           @map("banner_image")
+  status                 ActivityStatus    @default(Published)
+  registrationStatus     RegistrationState @default(Registration_Open) @map("registration_status")
+  points                 Int               @default(20)
+  qrCodeHash             String?           @map("qr_code_hash")
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+
+  category             Category?             @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  organization         ClubOrganization?     @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  organizer            Teacher?              @relation(fields: [organizerId], references: [id], onDelete: SetNull)
+  registrations        Registration[]
+  attendanceSessions   AttendanceSession[]
+  attendanceRecords    AttendanceRecord[]
+  participationRecords ParticipationRecord[]
+  certificates         Certificate[]
+  announcements        Announcement[]
+
+  @@map("activities")
+}
+
+model Registration {
+  id               String             @id @default(uuid())
+  activityId       String             @map("activity_id")
+  studentId        String             @map("student_id")
+  status           RegistrationStatus @default(Pending)
+  registrationDate DateTime           @default(now()) @map("registration_date")
+  reviewNotes      String?            @map("review_notes")
+  reviewedBy       String?            @map("reviewed_by")
+  reviewedAt       DateTime?          @map("reviewed_at")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([activityId, studentId])
+  @@map("registrations")
+}
+
+model AttendanceSession {
+  id           String    @id @default(uuid())
+  activityId   String    @map("activity_id")
+  sessionTitle String    @map("session_title")
+  sessionDate  DateTime  @map("session_date") @db.Date
+  startTime    String    @map("start_time")
+  endTime      String    @map("end_time")
+  qrCodeToken  String?   @unique @map("qr_code_token")
+  qrExpiresAt  DateTime? @map("qr_expires_at")
+  createdBy    String?   @map("created_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  activity Activity           @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  records  AttendanceRecord[]
+
+  @@map("attendance_sessions")
+}
+
+model AttendanceRecord {
+  id            String           @id @default(uuid())
+  sessionId     String           @map("session_id")
+  activityId    String           @map("activity_id")
+  studentId     String           @map("student_id")
+  status        AttendanceStatus @default(Present)
+  checkInTime   DateTime?        @map("check_in_time")
+  checkInMethod String           @default("manual") @map("check_in_method")
+  notes         String?
+  recordedBy    String?          @map("recorded_by")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  session  AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  activity Activity          @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  student  Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, studentId])
+  @@map("attendance_records")
+}
+
+model ParticipationRecord {
+  id                String   @id @default(uuid())
+  studentId         String   @map("student_id")
+  activityId        String   @map("activity_id")
+  role              String   @default("Participant")
+  hoursSpent        Decimal  @default(2.0) @map("hours_spent") @db.Decimal(5, 2)
+  performanceRating Decimal? @map("performance_rating") @db.Decimal(3, 1)
+  feedback          String?
+  completionStatus  String   @default("Completed") @map("completion_status")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@map("participation_records")
+}
+
+model Achievement {
+  id          String   @id @default(uuid())
+  title       String
+  description String
+  category    String
+  icon        String   @default("Trophy")
+  criteria    String
+  points      Int      @default(50)
+  badgeId     String?  @map("badge_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  studentAchievements StudentAchievement[]
+
+  @@map("achievements")
+}
+
+model StudentAchievement {
+  id            String   @id @default(uuid())
+  studentId     String   @map("student_id")
+  achievementId String   @map("achievement_id")
+  activityId    String?  @map("activity_id")
+  awardedBy     String?  @map("awarded_by")
+  awardedAt     DateTime @default(now()) @map("awarded_at")
+  notes         String?
+  isCelebrated  Boolean  @default(false) @map("is_celebrated")
+
+  student     Student     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, achievementId])
+  @@map("student_achievements")
+}
+
+model Badge {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String
+  iconName    String    @default("Medal") @map("icon_name")
+  color       String    @default("#F59E0B")
+  tier        BadgeTier @default(Bronze)
+  criteria    String
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  studentBadges StudentBadge[]
+  milestones    Milestone[]
+
+  @@map("badges")
+}
+
+model StudentBadge {
+  id           String   @id @default(uuid())
+  studentId    String   @map("student_id")
+  badgeId      String   @map("badge_id")
+  activityId   String?  @map("activity_id")
+  earnedAt     DateTime @default(now()) @map("earned_at")
+  awardedBy    String?  @map("awarded_by")
+  isCelebrated Boolean  @default(false) @map("is_celebrated")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  badge   Badge   @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, badgeId])
+  @@map("student_badges")
+}
+
+model Milestone {
+  id           String   @id @default(uuid())
+  title        String
+  description  String
+  category     String
+  targetValue  Int      @default(1) @map("target_value")
+  targetMetric String   @map("target_metric")
+  badgeId      String?  @map("badge_id")
+  orderIndex   Int      @default(0) @map("order_index")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  badge             Badge?             @relation(fields: [badgeId], references: [id], onDelete: SetNull)
+  studentMilestones StudentMilestone[]
+
+  @@map("milestones")
+}
+
+model StudentMilestone {
+  id          String    @id @default(uuid())
+  studentId   String    @map("student_id")
+  milestoneId String    @map("milestone_id")
+  currentValue Int      @default(0) @map("current_value")
+  isCompleted Boolean   @default(false) @map("is_completed")
+  completedAt DateTime? @map("completed_at")
+
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  milestone Milestone @relation(fields: [milestoneId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, milestoneId])
+  @@map("student_milestones")
+}
+
+model Certificate {
+  id                String   @id @default(uuid())
+  studentId         String   @map("student_id")
+  activityId        String   @map("activity_id")
+  title             String
+  description       String?
+  certificateNumber String   @unique @map("certificate_number")
+  fileUrl           String   @map("file_url")
+  fileSize          String?  @map("file_size")
+  issueDate         DateTime @map("issue_date") @db.Date
+  issuedBy          String?  @map("issued_by")
+  templateId        String?  @default("cnhs-standard-v1") @map("template_id")
+  status            String   @default("VERIFIED")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@map("certificates")
+}
+
+model Announcement {
+  id               String    @id @default(uuid())
+  title            String
+  content          String
+  imageUrl         String?   @map("image_url")
+  activityId       String?   @map("activity_id")
+  authorId         String    @map("author_id")
+  targetAudience   String    @default("All") @map("target_audience")
+  targetGradeLevel String?   @map("target_grade_level")
+  isPinned         Boolean   @default(false) @map("is_pinned")
+  publishDate      DateTime  @default(now()) @map("publish_date")
+  expirationDate   DateTime? @map("expiration_date")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  activity Activity? @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  author   User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@map("announcements")
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  title     String
+  message   String
+  type      String    @default("system")
+  link      String?
+  isRead    Boolean   @default(false) @map("is_read")
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model StudentInterest {
+  id           String   @id @default(uuid())
+  studentId    String   @map("student_id")
+  interestName String   @map("interest_name")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, interestName])
+  @@map("student_interests")
+}
+
+model StudentSkill {
+  id               String   @id @default(uuid())
+  studentId        String   @map("student_id")
+  skillName        String   @map("skill_name")
+  proficiencyLevel String   @default("Intermediate") @map("proficiency_level")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, skillName])
+  @@map("student_skills")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?  @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  oldData    String?  @map("old_data")
+  newData    String?  @map("new_data")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+model SystemSetting {
+  id           String   @id @default(uuid())
+  settingKey   String   @unique @map("setting_key")
+  settingValue String   @map("setting_value")
+  description  String?
+  updatedBy    String?  @map("updated_by")
+  updatedAt    DateTime @default(now()) @map("updated_at")
+
+  @@map("system_settings")
+}

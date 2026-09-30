@@ -1,0 +1,28 @@
+{
+  "name": "cnhs-extracurricular-system",
+  "version": "1.0.0",
+  "description": "Centrala National High School Extracurricular Activities and Student Development System",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "seed": "npm --prefix backend run seed",
+    "install:all": "npm --prefix backend install && npm --prefix frontend install"
+  },
+  "keywords": [
+    "extracurricular",
+    "student-development",
+    "school-management",
+    "cnhs",
+    "surallah",
+    "south-cotabato"
+  ],
+  "author": "Centrala National High School Dev Team",
+  "license": "MIT"
+}
