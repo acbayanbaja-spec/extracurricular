@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 export const config = {
   port: parseInt(process.env.PORT || '5000', 10),
@@ -11,6 +12,7 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '1d',
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
   databaseUrl: process.env.DATABASE_URL || '',
+  directUrl: process.env.DIRECT_URL || '',
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
   supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',

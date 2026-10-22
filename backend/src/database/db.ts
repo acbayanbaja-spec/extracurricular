@@ -35,13 +35,26 @@ class DatabaseManager {
     if (this.initialized) return;
 
     try {
-      const schemaPath = path.resolve(__dirname, 'schema.sql');
-      if (fs.existsSync(schemaPath)) {
-        const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-
-        if (this.isPostgres && this.pgPool) {
+      if (this.isPostgres && this.pgPool) {
+        const candidates = [
+          path.resolve(__dirname, 'schema.pg.sql'),
+          path.resolve(__dirname, '../../src/database/schema.pg.sql'),
+          path.resolve(__dirname, '../../../supabase/migrations/20260930000000_cnhs_extracurricular_schema.sql'),
+          path.resolve(__dirname, '../../../../supabase/migrations/20260930000000_cnhs_extracurricular_schema.sql'),
+        ];
+        const schemaPath = candidates.find(p => fs.existsSync(p));
+        if (schemaPath) {
+          const schemaSql = fs.readFileSync(schemaPath, 'utf8');
           await this.pgPool.query(schemaSql);
-        } else if (this.libsqlClient) {
+        }
+      } else if (this.libsqlClient) {
+        const sqliteCandidates = [
+          path.resolve(__dirname, 'schema.sql'),
+          path.resolve(__dirname, '../../src/database/schema.sql'),
+        ];
+        const schemaPath = sqliteCandidates.find(p => fs.existsSync(p));
+        if (schemaPath) {
+          const schemaSql = fs.readFileSync(schemaPath, 'utf8');
           await this.libsqlClient.executeMultiple(schemaSql);
         }
       }

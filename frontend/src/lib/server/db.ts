@@ -1,8 +1,11 @@
 import { Pool } from 'pg';
 
-const SUPABASE_DEFAULT_URL = 'postgresql://postgres.rfxxbqrkrdwiatbfqtlw:extramandaw221@aws-0-ap-southeast-2.pooler.supabase.com:6543/postgres';
+const SUPABASE_DEFAULT_URL = 'postgresql://postgres.ybkodgidcytpjxefgmle:nOG2bfCjfkqOwqui@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true';
 
-const rawDbUrl = (process.env.DATABASE_URL || SUPABASE_DEFAULT_URL).trim();
+let rawDbUrl = (process.env.DATABASE_URL || '').trim();
+if (!rawDbUrl || rawDbUrl.includes('rfxxbqrkrdwiatbfqtlw')) {
+  rawDbUrl = SUPABASE_DEFAULT_URL;
+}
 const cleanDbUrl = rawDbUrl.replace(/([?&])sslmode=[^&]+(&|$)/, '$1').replace(/\?$/, '');
 
 // Create singleton pool for serverless execution
