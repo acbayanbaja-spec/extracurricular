@@ -35,6 +35,7 @@ const config: Config = {
           700: "#4338ca",
           800: "#3730a3",
           900: "#312e81",
+          950: "#0f172a",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",

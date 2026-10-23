@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Megaphone, Pin, PlusCircle, Trash2, Calendar, User } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function AnnouncementsPage() {
   const { user } = useAuth();
@@ -37,6 +38,12 @@ export default function AnnouncementsPage() {
 
   useEffect(() => {
     fetchAnnouncements();
+    const unsubscribe = realtimeSync.subscribe((msg) => {
+      if (msg.type === 'ANNOUNCEMENT_POSTED') {
+        fetchAnnouncements();
+      }
+    });
+    return () => unsubscribe();
   }, []);
 
   const handleCreateNotice = async (e: React.FormEvent) => {
@@ -45,6 +52,12 @@ export default function AnnouncementsPage() {
     try {
       await ApiClient.post('/announcements', newNotice);
       toast.success('Announcement published! 📢');
+      realtimeSync.broadcast(
+        'ANNOUNCEMENT_POSTED',
+        newNotice,
+        user ? `${user.firstName} ${user.lastName}` : 'Adviser Javidec Monsion',
+        user?.role
+      );
       setIsCreateOpen(false);
       setNewNotice({
         title: '',

@@ -7,6 +7,8 @@ import { Navbar } from '@/components/layout/Navbar';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { CelebrationModal } from '@/components/celebration/CelebrationModal';
 import { Loader2 } from 'lucide-react';
+import { realtimeSync, RealtimeMessage } from '@/lib/realtime';
+import { toast } from 'sonner';
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -19,6 +21,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       router.push('/login');
     }
   }, [user, isLoading, router]);
+
+  // Real-time cross-tab & cross-user notification listener
+  useEffect(() => {
+    if (!user) return;
+
+    const unsubscribe = realtimeSync.subscribe((msg: RealtimeMessage) => {
+      // Don't show toast to the user who triggered it unless it's a global notification
+      if (msg.type === 'ANNOUNCEMENT_POSTED') {
+        toast.info('📢 New Campus Bulletin', {
+          description: `${msg.senderName || 'Faculty'}: "${msg.payload?.title || 'Notice'}"`,
+        });
+      } else if (msg.type === 'REGISTRATION_SUBMITTED' && (user.role === 'TEACHER' || user.role === 'ADMINISTRATOR')) {
+        toast.info('📝 New Participant Registration', {
+          description: `${msg.payload?.studentName || 'Learner'} applied for "${msg.payload?.activityTitle || 'Activity'}"`,
+        });
+      } else if (msg.type === 'REGISTRATION_REVIEWED' && user.role === 'STUDENT') {
+        toast.success(`🎉 Application ${msg.payload?.status}!`, {
+          description: `Your registration for "${msg.payload?.activityTitle || 'Club'}" was marked as ${msg.payload?.status}.`,
+        });
+      } else if (msg.type === 'ATTENDANCE_CHECKED_IN' && (user.role === 'TEACHER' || user.role === 'ADMINISTRATOR')) {
+        toast.success('✅ Student Check-In Verified', {
+          description: `${msg.payload?.studentName || 'Learner'} checked in via session QR scan.`,
+        });
+      } else if (msg.type === 'CERTIFICATE_ISSUED' && user.role === 'STUDENT') {
+        toast.success('📜 Official Certificate Conferred!', {
+          description: `You were awarded "${msg.payload?.title || 'Credential'}" by Adviser Javidec Monsion.`,
+        });
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user]);
 
   if (isLoading) {
     return (

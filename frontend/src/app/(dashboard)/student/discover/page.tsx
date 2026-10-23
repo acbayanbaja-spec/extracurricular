@@ -7,6 +7,7 @@ import { ActivityCard } from '@/components/activities/ActivityCard';
 import { Button } from '@/components/ui/Button';
 import { Search, Filter, Compass, SlidersHorizontal, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function DiscoverActivitiesPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -48,9 +49,20 @@ export default function DiscoverActivitiesPage() {
     setRegisteringId(activityId);
     try {
       await ApiClient.post('/registrations/register', { activityId });
+      const act = activities.find((a) => a.id === activityId);
       toast.success('Registration Submitted! 🎉', {
         description: 'Your registration request has been forwarded to the adviser for approval.',
       });
+      realtimeSync.broadcast(
+        'REGISTRATION_SUBMITTED',
+        {
+          activityId,
+          activityTitle: act?.title || 'Extracurricular Club',
+          studentName: 'Nicole Maquilan',
+        },
+        'Nicole Maquilan',
+        'STUDENT'
+      );
       fetchActivities();
     } catch (err: any) {
       toast.error('Registration Failed', { description: err.message });

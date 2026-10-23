@@ -69,7 +69,7 @@ export function CertificatePreviewModal({
             </div>
             <p className="text-xs text-muted-foreground mt-3 italic">This is proudly conferred upon</p>
             <h3 className="text-2xl sm:text-3xl font-extrabold text-primary-700 dark:text-primary-400 my-2 tracking-tight">
-              {studentName || 'Angelo Morales'}
+              {studentName || 'Nicole Maquilan'}
             </h3>
             <p className="text-xs text-muted-foreground max-w-lg mx-auto">
               for exemplary active participation and meritorious accomplishment in

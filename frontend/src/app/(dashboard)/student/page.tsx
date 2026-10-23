@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function StudentDashboard() {
   const { user } = useAuth();
@@ -58,6 +59,16 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     loadData();
+    const unsubscribe = realtimeSync.subscribe((msg) => {
+      if (
+        msg.type === 'REGISTRATION_REVIEWED' ||
+        msg.type === 'ATTENDANCE_MARKED' ||
+        msg.type === 'ACTIVITY_CREATED'
+      ) {
+        loadData();
+      }
+    });
+    return () => unsubscribe();
   }, [user]);
 
   const handleRegister = async (activityId: string) => {
@@ -66,6 +77,12 @@ export default function StudentDashboard() {
       toast.success('Registration Submitted!', {
         description: 'Your registration is awaiting adviser review.',
       });
+      realtimeSync.broadcast(
+        'REGISTRATION_SUBMITTED',
+        { activityId, studentName: user ? `${user.firstName} ${user.lastName}` : 'Nicole Maquilan' },
+        user ? `${user.firstName} ${user.lastName}` : 'Nicole Maquilan',
+        'STUDENT'
+      );
       loadData();
     } catch (err: any) {
       toast.error('Registration Failed', { description: err.message });

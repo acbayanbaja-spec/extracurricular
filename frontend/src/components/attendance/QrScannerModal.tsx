@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { QrCode, Camera, CheckCircle2, AlertCircle } from 'lucide-react';
 import { ApiClient } from '@/lib/api';
 import { toast } from 'sonner';
+import { realtimeSync } from '@/lib/realtime';
 
 interface QrScannerModalProps {
   isOpen: boolean;
@@ -54,6 +55,13 @@ export function QrScannerModal({ isOpen, onClose, onSuccess }: QrScannerModalPro
       toast.success('Attendance Recorded! ✅', {
         description: result.message || 'You have been checked in successfully.',
       });
+
+      realtimeSync.broadcast(
+        'ATTENDANCE_CHECKED_IN',
+        { studentName: 'Nicole Maquilan', sessionId: sessionId || 'ses-01' },
+        'Nicole Maquilan',
+        'STUDENT'
+      );
 
       setManualCode('');
       onSuccess?.();

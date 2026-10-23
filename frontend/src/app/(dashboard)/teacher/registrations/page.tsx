@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal';
 import { ClipboardCheck, CheckCircle2, XCircle, Search, Filter } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function TeacherRegistrationsPage() {
   const [registrations, setRegistrations] = useState<Registration[]>([]);
@@ -37,6 +38,13 @@ export default function TeacherRegistrationsPage() {
   useEffect(() => {
     fetchRegistrations();
     ApiClient.get<Activity[]>('/activities').then((acts) => setActivities(acts || []));
+
+    const unsubscribe = realtimeSync.subscribe((msg) => {
+      if (msg.type === 'REGISTRATION_SUBMITTED') {
+        fetchRegistrations();
+      }
+    });
+    return () => unsubscribe();
   }, [selectedActivity, selectedStatus]);
 
   const handleReviewSubmit = async (e: React.FormEvent) => {
@@ -50,6 +58,19 @@ export default function TeacherRegistrationsPage() {
         reviewNotes,
       });
       toast.success(`Registration marked as ${reviewStatus}`);
+
+      realtimeSync.broadcast(
+        'REGISTRATION_REVIEWED',
+        {
+          id: activeReg.id,
+          status: reviewStatus,
+          studentName: activeReg.first_name,
+          activityTitle: activeReg.activity_title,
+        },
+        'Javidec Monsion',
+        'TEACHER'
+      );
+
       setActiveReg(null);
       setReviewNotes('');
       fetchRegistrations();

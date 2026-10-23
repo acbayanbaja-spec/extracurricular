@@ -38,14 +38,14 @@ export default function LoginPage() {
     student: {
       email: 'student@cnhs.edu.ph',
       password: 'Password123!',
-      name: 'Angelo Morales (Learner)',
+      name: 'Nicole Maquilan (Learner)',
       desc: 'Access Club Registrations, QR Attendance Check-In & Portfolio',
       roleLabel: 'Grade 11 - STEM Varsity Delegate',
     },
     teacher: {
       email: 'maria.santos@cnhs.edu.ph',
       password: 'Password123!',
-      name: 'Maria Santos (Faculty)',
+      name: 'Javidec Monsion (Faculty)',
       desc: 'Manage SSLG & Clubs, Generate QR Codes & Approve Registrations',
       roleLabel: 'SSLG & Red Cross Club Adviser',
     },
@@ -129,57 +129,57 @@ export default function LoginPage() {
             initial={{ opacity: 0, x: -25 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
-            className="hidden lg:flex lg:col-span-5 flex-col justify-between space-y-8 p-8 rounded-3xl bg-gradient-to-br from-primary-950 via-primary-900 to-indigo-950 text-white border border-primary-800/40 shadow-2xl shadow-primary-950/50 relative overflow-hidden"
+            className="hidden lg:flex lg:col-span-5 flex-col justify-between space-y-8 p-8 rounded-3xl bg-[#0a0f1d] bg-gradient-to-br from-[#070b14] via-[#0f172a] to-[#1e1b4b] text-white border border-indigo-500/30 shadow-2xl shadow-indigo-950/60 relative overflow-hidden"
           >
-            <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-indigo-500/20 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 bg-indigo-500/25 rounded-full blur-2xl pointer-events-none" />
 
             <div className="space-y-4 relative z-10">
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-bold tracking-wide">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-xs font-bold tracking-wide text-white">
                 <School className="h-3.5 w-3.5 text-amber-400" />
                 <span>School ID: 305412 • Surallah</span>
               </div>
-              <h2 className="text-3xl font-black tracking-tight leading-tight">
+              <h2 className="text-3xl font-black tracking-tight leading-tight text-white drop-shadow-md">
                 Empowering Centralian Excellence
               </h2>
-              <p className="text-xs text-primary-200/90 leading-relaxed font-normal">
+              <p className="text-xs text-indigo-100/90 leading-relaxed font-normal">
                 Welcome to Centrala National High School’s integrated Extracurricular Activities and Student Development System. Discover recognized organizations, verify official attendance, and build an authentic digital portfolio.
               </p>
             </div>
 
             {/* Feature Pills */}
             <div className="space-y-3 relative z-10">
-              <div className="flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400">
+              <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-md shadow-sm">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-300">
                   <QrCode className="h-5 w-5" />
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-white">Anti-Fraud QR Check-In</h4>
-                  <p className="text-[11px] text-primary-200/70">Time-windowed dynamic tokens for club meetings</p>
+                  <p className="text-[11px] text-indigo-200/90">Time-windowed dynamic tokens for club meetings</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
+              <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-md shadow-sm">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
                   <Award className="h-5 w-5" />
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-white">Digital Student Portfolio</h4>
-                  <p className="text-[11px] text-primary-200/70">Automatic milestone badges & verified certificates</p>
+                  <p className="text-[11px] text-indigo-200/90">Automatic milestone badges & verified certificates</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 p-3 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-md">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-400">
+              <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-md shadow-sm">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-500/25 text-indigo-300">
                   <ShieldCheck className="h-5 w-5" />
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-white">DepEd Recognized Security</h4>
-                  <p className="text-[11px] text-primary-200/70">Role-based access control with comprehensive audit trail</p>
+                  <p className="text-[11px] text-indigo-200/90">Role-based access control with comprehensive audit trail</p>
                 </div>
               </div>
             </div>
 
-            <div className="pt-4 border-t border-white/10 text-[11px] text-primary-300/80 flex items-center justify-between relative z-10">
+            <div className="pt-4 border-t border-white/15 text-[11px] text-indigo-200/80 flex items-center justify-between relative z-10">
               <span>Region XII • SOCCSKSARGEN</span>
               <span className="font-semibold text-white">Academic Year 2026-2027</span>
             </div>

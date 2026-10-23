@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
 import { Users, Award, FileCheck, ExternalLink, Search, Flame } from 'lucide-react';
 import { toast } from 'sonner';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function TeacherStudentsPage() {
   const [students, setStudents] = useState<any[]>([]);
@@ -78,6 +79,12 @@ export default function TeacherStudentsPage() {
         description: certForm.description,
       });
       toast.success(`Certificate issued to ${selectedStudentForCert.first_name}! 📜`);
+      realtimeSync.broadcast(
+        'CERTIFICATE_ISSUED',
+        { title: certForm.title, studentName: selectedStudentForCert.first_name },
+        'Javidec Monsion',
+        'TEACHER'
+      );
       setSelectedStudentForCert(null);
       fetchStudents();
     } catch (err: any) {

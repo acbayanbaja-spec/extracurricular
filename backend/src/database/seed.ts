@@ -30,12 +30,12 @@ export async function runSeeder(): Promise<void> {
     },
     {
       id: 'usr-teacher-01',
-      email: 'maria.santos@cnhs.edu.ph',
+      email: 'maria.santos@cnhs.edu.ph', // Also aliases javidec.monsion@cnhs.edu.ph
       password_hash: defaultPasswordHash,
       role: 'TEACHER',
       status: 'ACTIVE',
-      first_name: 'Maria',
-      last_name: 'Santos',
+      first_name: 'Javidec',
+      last_name: 'Monsion',
       avatar_url: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=256&q=80',
       phone: '+63 918 555 2301',
     },
@@ -63,12 +63,12 @@ export async function runSeeder(): Promise<void> {
     },
     {
       id: 'usr-student-01',
-      email: 'student@cnhs.edu.ph', // Also aliases angelo.morales@cnhs.edu.ph
+      email: 'student@cnhs.edu.ph', // Also aliases nicole.maquilan@cnhs.edu.ph
       password_hash: defaultPasswordHash,
       role: 'STUDENT',
       status: 'ACTIVE',
-      first_name: 'Angelo',
-      last_name: 'Morales',
+      first_name: 'Nicole',
+      last_name: 'Maquilan',
       avatar_url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=256&q=80',
       phone: '+63 921 555 5601',
     },

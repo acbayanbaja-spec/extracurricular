@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function TeacherAttendancePage() {
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -26,6 +27,16 @@ export default function TeacherAttendancePage() {
   const [sessionData, setSessionData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+
+  const fetchSessions = (activityId: string) => {
+    if (!activityId) return;
+    ApiClient.get<AttendanceSession[]>(`/attendance/sessions/${activityId}`).then((sess) => {
+      setSessions(sess || []);
+      if (sess && sess.length > 0) {
+        setSelectedSessionId(sess[0].id);
+      }
+    });
+  };
 
   useEffect(() => {
     ApiClient.get<Activity[]>('/activities').then((acts) => {
@@ -37,36 +48,70 @@ export default function TeacherAttendancePage() {
   }, []);
 
   useEffect(() => {
-    if (!selectedActivityId) return;
-    ApiClient.get<AttendanceSession[]>(`/attendance/sessions/${selectedActivityId}`).then((sess) => {
-      setSessions(sess || []);
-      if (sess && sess.length > 0) {
-        setSelectedSessionId(sess[0].id);
-      } else {
-        setSelectedSessionId('');
-        setSessionData(null);
-      }
-    });
+    if (selectedActivityId) {
+      fetchSessions(selectedActivityId);
+    }
   }, [selectedActivityId]);
 
-  useEffect(() => {
+  const loadSessionRoster = () => {
     if (!selectedSessionId) return;
     setIsLoading(true);
     ApiClient.get<any>(`/attendance/session/${selectedSessionId}`)
       .then((data) => setSessionData(data))
       .catch(() => {})
       .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    loadSessionRoster();
   }, [selectedSessionId]);
+
+  // Real-time listener: when any student checks in via QR, instantly update the roster
+  useEffect(() => {
+    const unsubscribe = realtimeSync.subscribe((msg) => {
+      if (msg.type === 'ATTENDANCE_CHECKED_IN') {
+        loadSessionRoster();
+      }
+    });
+    return () => unsubscribe();
+  }, [selectedSessionId]);
+
+  const handleQuickLaunchQR = async () => {
+    if (!selectedActivityId) return;
+    if (selectedSessionId) {
+      setIsQrModalOpen(true);
+      return;
+    }
+
+    try {
+      const act = activities.find((a) => a.id === selectedActivityId);
+      const res = await ApiClient.post<{ id: string }>('/attendance/sessions', {
+        activityId: selectedActivityId,
+        sessionTitle: act ? `${act.title} - Live Session` : 'Active Attendance Session',
+        sessionDate: act?.date || new Date().toISOString().split('T')[0],
+        startTime: act?.start_time || '08:00 AM',
+        endTime: act?.end_time || '12:00 PM',
+      });
+      toast.success('Session created! Opening Live QR...');
+      setSelectedSessionId(res.id);
+      setIsQrModalOpen(true);
+      fetchSessions(selectedActivityId);
+    } catch (err: any) {
+      toast.error('Failed to create session', { description: err.message });
+    }
+  };
 
   const handleMarkStatus = async (studentId: string, status: 'Present' | 'Absent' | 'Late' | 'Excused') => {
     try {
       await ApiClient.post('/attendance/mark', {
-        sessionId: selectedSessionId,
-        activityId: selectedActivityId,
+        sessionId: selectedSessionId || 'ses-01',
+        activityId: selectedActivityId || 'act-01',
         studentId,
         status,
       });
       toast.success(`Marked as ${status}`);
+
+      realtimeSync.broadcast('ATTENDANCE_MARKED', { studentId, status, activityId: selectedActivityId }, 'Javidec Monsion', 'TEACHER');
 
       // Optimistic update in table
       if (sessionData && sessionData.records) {
@@ -99,14 +144,12 @@ export default function TeacherAttendancePage() {
           </p>
         </div>
 
-        {selectedSessionId && (
-          <Button
-            onClick={() => setIsQrModalOpen(true)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md"
-          >
-            <QrCode className="mr-1.5 h-4 w-4" /> Present Live Session QR
-          </Button>
-        )}
+        <Button
+          onClick={handleQuickLaunchQR}
+          className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold shadow-md hover:scale-[1.02] transition-transform"
+        >
+          <QrCode className="mr-1.5 h-4 w-4" /> Present Live Session QR
+        </Button>
       </div>
 
       {/* Select Activity & Session Card */}

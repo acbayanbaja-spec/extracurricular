@@ -109,7 +109,7 @@ export default function StudentCertificatesPage() {
         isOpen={!!selectedCert}
         onClose={() => setSelectedCert(null)}
         certificate={selectedCert}
-        studentName={user ? `${user.firstName} ${user.lastName}` : 'Angelo Morales'}
+        studentName={user ? `${user.firstName} ${user.lastName}` : 'Nicole Maquilan'}
       />
     </div>
   );

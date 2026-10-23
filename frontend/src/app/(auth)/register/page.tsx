@@ -100,7 +100,7 @@ export default function RegisterPage() {
                   name="firstName"
                   value={formData.firstName}
                   onChange={handleChange}
-                  placeholder="e.g. Angelo"
+                  placeholder="e.g. Nicole"
                   className="w-full rounded-xl border border-input bg-background px-3.5 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary-500"
                   required
                 />
@@ -112,7 +112,7 @@ export default function RegisterPage() {
                   name="lastName"
                   value={formData.lastName}
                   onChange={handleChange}
-                  placeholder="e.g. Morales"
+                  placeholder="e.g. Maquilan"
                   className="w-full rounded-xl border border-input bg-background px-3.5 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary-500"
                   required
                 />
@@ -127,7 +127,7 @@ export default function RegisterPage() {
                   name="email"
                   value={formData.email}
                   onChange={handleChange}
-                  placeholder="e.g. angelo@cnhs.edu.ph"
+                  placeholder="e.g. nicole@cnhs.edu.ph"
                   className="w-full rounded-xl border border-input bg-background px-3.5 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary-500"
                   required
                 />

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function TeacherActivitiesPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -81,6 +82,12 @@ export default function TeacherActivitiesPage() {
         organizationId: newActivity.organizationId || (clubs[0]?.id || 'club-01'),
       });
       toast.success('Activity Created Successfully! 🌟');
+      realtimeSync.broadcast(
+        'ACTIVITY_CREATED',
+        { title: newActivity.title },
+        'Javidec Monsion',
+        'TEACHER'
+      );
       setIsCreateModalOpen(false);
       fetchActivities();
     } catch (err: any) {
