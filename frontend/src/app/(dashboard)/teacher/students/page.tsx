@@ -55,11 +55,23 @@ export default function TeacherStudentsPage() {
     if (!selectedStudentForBadge || !selectedBadgeId) return;
 
     try {
+      const badgeObj = badges.find((b) => b.id === selectedBadgeId);
       await ApiClient.post('/achievements/award-badge', {
         studentId: selectedStudentForBadge.id,
         badgeId: selectedBadgeId,
       });
-      toast.success(`Badge awarded to ${selectedStudentForBadge.first_name}! 🏅`);
+      toast.success(`Badge "${badgeObj?.name || 'Honor'}" awarded to ${selectedStudentForBadge.first_name}! 🏅`);
+      realtimeSync.broadcast(
+        'BADGE_AWARDED',
+        {
+          studentId: selectedStudentForBadge.id,
+          studentName: selectedStudentForBadge.first_name,
+          badgeName: badgeObj?.name || 'Honor Badge',
+          badgeTier: badgeObj?.tier || 'Bronze',
+        },
+        'Javidec Monsion',
+        'TEACHER'
+      );
       setSelectedStudentForBadge(null);
       fetchStudents();
     } catch (err: any) {

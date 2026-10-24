@@ -48,6 +48,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         toast.success('📜 Official Certificate Conferred!', {
           description: `You were awarded "${msg.payload?.title || 'Credential'}" by Adviser Javidec Monsion.`,
         });
+      } else if (msg.type === 'ACTIVITY_CREATED' && user.role === 'STUDENT') {
+        toast.info('🌟 New Activity Published!', {
+          description: `"${msg.payload?.title || 'Program'}" is now open for registration! Check Discover Activities.`,
+        });
+      } else if (msg.type === 'BADGE_AWARDED' && user.role === 'STUDENT') {
+        toast.success(`🏅 Honor Badge Conferred: ${msg.payload?.badgeName || 'Honor Badge'}!`, {
+          description: `Adviser ${msg.senderName || 'Javidec Monsion'} has conferred the ${msg.payload?.badgeTier || 'Honor'} badge to your portfolio.`,
+        });
       }
     });
 

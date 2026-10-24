@@ -63,7 +63,8 @@ export default function StudentDashboard() {
       if (
         msg.type === 'REGISTRATION_REVIEWED' ||
         msg.type === 'ATTENDANCE_MARKED' ||
-        msg.type === 'ACTIVITY_CREATED'
+        msg.type === 'ACTIVITY_CREATED' ||
+        msg.type === 'BADGE_AWARDED'
       ) {
         loadData();
       }

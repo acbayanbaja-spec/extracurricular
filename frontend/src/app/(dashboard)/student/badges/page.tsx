@@ -6,13 +6,14 @@ import { Badge as BadgeType, Milestone } from '@/types';
 import { Badge } from '@/components/ui/Badge';
 import { Award, Trophy, Star, Target, CheckCircle2, Lock, Sparkles } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function StudentBadgesPage() {
   const [badges, setBadges] = useState<BadgeType[]>([]);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchBadgesData = () => {
     setIsLoading(true);
     Promise.all([
       ApiClient.get<BadgeType[]>('/achievements/badges/my').catch(() => []),
@@ -22,6 +23,18 @@ export default function StudentBadgesPage() {
       setMilestones(mls || []);
       setIsLoading(false);
     });
+  };
+
+  useEffect(() => {
+    fetchBadgesData();
+
+    const unsubscribe = realtimeSync.subscribe((msg) => {
+      if (msg.type === 'BADGE_AWARDED') {
+        fetchBadgesData();
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const tierColors: Record<string, string> = {

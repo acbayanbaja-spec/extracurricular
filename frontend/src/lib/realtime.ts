@@ -9,7 +9,8 @@ export type RealtimeEventType =
   | 'ATTENDANCE_CHECKED_IN'
   | 'ATTENDANCE_MARKED'
   | 'CERTIFICATE_ISSUED'
-  | 'ACTIVITY_CREATED';
+  | 'ACTIVITY_CREATED'
+  | 'BADGE_AWARDED';
 
 export interface RealtimeMessage {
   type: RealtimeEventType;

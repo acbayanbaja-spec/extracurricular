@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { ApiClient } from '@/lib/api';
 import { NotificationItem } from '@/types';
 import { formatDate } from '@/lib/utils';
+import { realtimeSync } from '@/lib/realtime';
 
 interface NavbarProps {
   onMobileMenuToggle?: () => void;
@@ -34,7 +35,15 @@ export function Navbar({ onMobileMenuToggle }: NavbarProps) {
   useEffect(() => {
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 30000); // 30s polling
-    return () => clearInterval(interval);
+
+    const unsubscribe = realtimeSync.subscribe(() => {
+      fetchNotifications();
+    });
+
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
   }, [user]);
 
   const handleMarkAllRead = async () => {

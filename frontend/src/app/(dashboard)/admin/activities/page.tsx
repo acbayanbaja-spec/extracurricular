@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function AdminActivitiesPage() {
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -67,6 +68,14 @@ export default function AdminActivitiesPage() {
       setCategories(c || []);
       if (c && c.length > 0) setFormData((prev) => ({ ...prev, categoryId: c[0].id }));
     });
+
+    const unsubscribe = realtimeSync.subscribe((msg) => {
+      if (msg.type === 'ACTIVITY_CREATED') {
+        fetchActivities();
+      }
+    });
+
+    return () => unsubscribe();
   }, [search, selectedCategory]);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -77,6 +86,12 @@ export default function AdminActivitiesPage() {
         categoryId: formData.categoryId || (categories[0]?.id || 'cat-01'),
       });
       toast.success('Activity created successfully! 🌟');
+      realtimeSync.broadcast(
+        'ACTIVITY_CREATED',
+        { title: formData.title },
+        'Rodrigo Mendoza',
+        'ADMINISTRATOR'
+      );
       setIsCreateOpen(false);
       fetchActivities();
     } catch (err: any) {

@@ -241,6 +241,85 @@ function initFallbackStore() {
     },
   ];
 
+  const badges = [
+    {
+      id: 'bdg-01',
+      name: 'Active Participant',
+      slug: 'active-participant',
+      description: 'Actively registered, participated, and completed at least 3 school extracurricular activities.',
+      icon_name: 'Medal',
+      color: '#CD7F32',
+      tier: 'Bronze',
+      criteria: 'Complete 3 sanctioned extracurricular activities.',
+      created_at: '2026-09-01T00:00:00.000Z',
+    },
+    {
+      id: 'bdg-02',
+      name: 'Outstanding Leader',
+      slug: 'outstanding-leader',
+      description: 'Demonstrated exemplary servant leadership in student governance or activity facilitation.',
+      icon_name: 'Trophy',
+      color: '#F59E0B',
+      tier: 'Gold',
+      criteria: 'Lead an organization project or receive teacher leadership commendation.',
+      created_at: '2026-09-01T00:00:00.000Z',
+    },
+    {
+      id: 'bdg-03',
+      name: 'Consistent Participant',
+      slug: 'consistent-participant',
+      description: 'Maintained 90% or higher attendance across all activity sessions.',
+      icon_name: 'Star',
+      color: '#94A3B8',
+      tier: 'Silver',
+      criteria: 'Maintain 90% attendance across extracurricular activities.',
+      created_at: '2026-09-01T00:00:00.000Z',
+    },
+    {
+      id: 'bdg-04',
+      name: 'Goal Achiever',
+      slug: 'goal-achiever',
+      description: 'Successfully reached 5 milestones and collected official skill validations.',
+      icon_name: 'Target',
+      color: '#10B981',
+      tier: 'Platinum',
+      criteria: 'Complete 5 student development milestones.',
+      created_at: '2026-09-01T00:00:00.000Z',
+    },
+  ];
+
+  const student_badges = [
+    {
+      id: 'sb-01',
+      student_id: 'std-01',
+      badge_id: 'bdg-01',
+      earned_at: '2026-09-15T08:00:00.000Z',
+      awarded_by: 'usr-teacher-01',
+      is_celebrated: true,
+    },
+    {
+      id: 'sb-02',
+      student_id: 'std-01',
+      badge_id: 'bdg-02',
+      earned_at: '2026-09-28T09:00:00.000Z',
+      awarded_by: 'usr-teacher-01',
+      is_celebrated: true,
+    },
+  ];
+
+  const certificates = [
+    {
+      id: 'cert-01',
+      student_id: 'std-01',
+      activity_id: 'act-01',
+      title: 'Certificate of Meritorious Leadership & Civic Service',
+      description: 'Awarded for active leadership, continuous participation, and dedication to school community projects.',
+      certificate_number: 'CNHS-CERT-2026-8812',
+      file_url: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80',
+      issue_date: '2026-10-16',
+    },
+  ];
+
   global._cnhsInMemoryStore = {
     users,
     students,
@@ -252,6 +331,9 @@ function initFallbackStore() {
     sessions,
     registrations,
     notifications,
+    badges,
+    student_badges,
+    certificates,
   };
 
   return global._cnhsInMemoryStore;
@@ -290,9 +372,57 @@ export const serverDb = {
       return store.categories as T[];
     }
 
+    if (lower.includes('from badges')) {
+      return store.badges as T[];
+    }
+
+    if (lower.includes('from student_badges')) {
+      if (lower.includes('student_id = ? and badge_id = ?')) {
+        return store.student_badges.filter((sb: any) => sb.student_id === params[0] && sb.badge_id === params[1]) as T[];
+      }
+      if (lower.includes('student_id = ?')) {
+        const studentBadges = store.student_badges.filter((sb: any) => sb.student_id === params[0]);
+        if (lower.includes('join badges')) {
+          return studentBadges.map((sb: any) => {
+            const b = store.badges.find((badge: any) => badge.id === sb.badge_id) || {};
+            return { ...b, ...sb, awarded_at: sb.earned_at || sb.awarded_at };
+          }) as T[];
+        }
+        return studentBadges as T[];
+      }
+      return store.student_badges as T[];
+    }
+
+    if (lower.includes('from certificates')) {
+      if (lower.includes('certificate_number = ?')) {
+        const cert = store.certificates.find((c: any) => c.certificate_number === params[0]);
+        return (cert ? [cert] : []) as T[];
+      }
+      if (lower.includes('student_id = ?')) {
+        return store.certificates.filter((c: any) => c.student_id === params[0]) as T[];
+      }
+      return store.certificates as T[];
+    }
+
     if (lower.includes('from activities')) {
+      if (lower.includes('where a.id = ?') || lower.includes('where id = ?')) {
+        const id = params[0];
+        const match = store.activities.find((a: any) => a.id === id);
+        return match ? ([{
+          ...match,
+          points_value: match.points || match.points_value || 25,
+          points: match.points || match.points_value || 25,
+          category_name: store.categories.find((c: any) => c.id === match.category_id)?.name || 'General',
+          category_color: store.categories.find((c: any) => c.id === match.category_id)?.color || '#4F46E5',
+          organization_name: 'Centrala High Supreme Secondary Learner Government (SSLG)',
+          organizer_name: 'Javidec Monsion',
+        }] as T[]) : ([] as T[]);
+      }
+
       return store.activities.map((a: any) => ({
         ...a,
+        points_value: a.points || a.points_value || 25,
+        points: a.points || a.points_value || 25,
         category_name: store.categories.find((c: any) => c.id === a.category_id)?.name || 'General',
         category_color: store.categories.find((c: any) => c.id === a.category_id)?.color || '#4F46E5',
         organization_name: 'Centrala High Supreme Secondary Learner Government (SSLG)',
@@ -309,15 +439,99 @@ export const serverDb = {
     }
 
     if (lower.includes('from registrations')) {
-      return store.registrations as T[];
+      if (lower.includes('where r.id = ?') || lower.includes('where id = ?')) {
+        const regId = params[0];
+        const r = store.registrations.find((reg: any) => reg.id === regId);
+        if (!r) return [] as T[];
+        const act = store.activities.find((a: any) => a.id === r.activity_id) || {};
+        const student = store.students.find((s: any) => s.id === r.student_id) || {};
+        const user = store.users.find((u: any) => u.id === student.user_id) || {};
+        return [{
+          ...r,
+          activity_title: act.title || 'Extracurricular Program',
+          student_name: `${user.first_name || 'Nicole'} ${user.last_name || 'Maquilan'}`,
+          first_name: user.first_name || 'Nicole',
+          last_name: user.last_name || 'Maquilan',
+          email: user.email || 'student@cnhs.edu.ph',
+          user_id: user.id || 'usr-student-01',
+          grade_level: student.grade_level || 'Grade 10',
+          section: student.section || 'Rizal',
+          student_id_number: student.student_id_number || '109823450012',
+        }] as T[];
+      }
+
+      if (lower.includes('where r.student_id = ?') || lower.includes('where student_id = ?')) {
+        const studentId = params[0];
+        const studentRegs = store.registrations.filter((r: any) => r.student_id === studentId);
+        return studentRegs.map((r: any) => {
+          const act = store.activities.find((a: any) => a.id === r.activity_id) || {};
+          return {
+            ...r,
+            activity_title: act.title || 'Extracurricular Program',
+            date: act.date,
+            start_time: act.start_time,
+            end_time: act.end_time,
+            location: act.location,
+            points_value: act.points || act.points_value || 25,
+            points: act.points || act.points_value || 25,
+          };
+        }) as T[];
+      }
+
+      return store.registrations.map((r: any) => {
+        const act = store.activities.find((a: any) => a.id === r.activity_id) || {};
+        const student = store.students.find((s: any) => s.id === r.student_id) || {};
+        const user = store.users.find((u: any) => u.id === student.user_id) || {};
+        return {
+          ...r,
+          activity_title: act.title || 'Extracurricular Program',
+          student_name: `${user.first_name || 'Nicole'} ${user.last_name || 'Maquilan'}`,
+          first_name: user.first_name || 'Nicole',
+          last_name: user.last_name || 'Maquilan',
+          email: user.email || 'student@cnhs.edu.ph',
+          user_id: user.id || 'usr-student-01',
+          grade_level: student.grade_level || 'Grade 10',
+          section: student.section || 'Rizal',
+          student_id_number: student.student_id_number || '109823450012',
+        };
+      }) as T[];
     }
 
     if (lower.includes('from notifications')) {
+      if (lower.includes('where user_id = ?')) {
+        return store.notifications.filter((n: any) => n.user_id === params[0]) as T[];
+      }
       return store.notifications as T[];
     }
 
     if (lower.includes('from students')) {
-      return store.students as T[];
+      if (lower.includes('where user_id = ?')) {
+        return store.students.filter((s: any) => s.user_id === params[0]) as T[];
+      }
+      if (lower.includes('where id = ?') || lower.includes('where s.id = ?')) {
+        const s = store.students.find((std: any) => std.id === params[0]);
+        if (!s) return [] as T[];
+        const u = store.users.find((usr: any) => usr.id === s.user_id) || {};
+        return [{
+          ...s,
+          first_name: u.first_name || 'Nicole',
+          last_name: u.last_name || 'Maquilan',
+          email: u.email || 'student@cnhs.edu.ph',
+          avatar_url: u.avatar_url,
+        }] as T[];
+      }
+
+      return store.students.map((s: any) => {
+        const u = store.users.find((usr: any) => usr.id === s.user_id) || {};
+        return {
+          ...s,
+          first_name: u.first_name || 'Nicole',
+          last_name: u.last_name || 'Maquilan',
+          email: u.email || 'student@cnhs.edu.ph',
+          avatar_url: u.avatar_url,
+          activities_joined_count: store.registrations.filter((r: any) => r.student_id === s.id && r.status === 'Approved').length,
+        };
+      }) as T[];
     }
 
     return [] as T[];
@@ -341,7 +555,134 @@ export const serverDb = {
     }
 
     const store = initFallbackStore();
-    const lower = sql.toLowerCase();
+    const lower = sql.toLowerCase().trim();
+
+    if (lower.startsWith('insert into users')) {
+      store.users.unshift({
+        id: params[0],
+        email: params[1],
+        password_hash: params[2],
+        role: params[3] || 'STUDENT',
+        status: params[4] || 'ACTIVE',
+        first_name: params[5] || 'Nicole',
+        last_name: params[6] || 'Maquilan',
+        avatar_url: params[7],
+        phone: params[8],
+      });
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('insert into students')) {
+      store.students.unshift({
+        id: params[0],
+        user_id: params[1],
+        student_id_number: params[2],
+        grade_level: params[3],
+        section: params[4],
+        track_strand: params[5],
+        guardian_name: params[6],
+        guardian_phone: params[7],
+        bio: params[8],
+        attendance_rate: 100.0,
+        streak_count: 1,
+        total_points: 50,
+      });
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('insert into activities')) {
+      store.activities.unshift({
+        id: params[0],
+        title: params[1],
+        slug: params[2],
+        description: params[3],
+        category_id: params[4] || 'cat-01',
+        organization_id: params[5] || 'club-01',
+        organizer_id: params[6] || 'tch-01',
+        location: params[7],
+        date: params[8],
+        start_time: params[9] || '08:00 AM',
+        end_time: params[10] || '12:00 PM',
+        registration_deadline: params[11],
+        max_participants: params[12] || 30,
+        current_participants: 0,
+        points: params[13] || 25,
+        points_value: params[13] || 25,
+        status: 'Published',
+        registration_status: 'Registration Open',
+        banner_image: params[14] || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80',
+      });
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('insert into student_badges')) {
+      store.student_badges.unshift({
+        id: params[0],
+        student_id: params[1],
+        badge_id: params[2],
+        earned_at: new Date().toISOString(),
+        awarded_by: params[3] || 'usr-teacher-01',
+        is_celebrated: true,
+      });
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('insert into registrations')) {
+      store.registrations.unshift({
+        id: params[0],
+        student_id: params[1],
+        activity_id: params[2],
+        status: params[3] || 'Pending',
+        registration_date: new Date().toISOString(),
+      });
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('update registrations')) {
+      // e.g. UPDATE registrations SET status = ?, review_notes = ? WHERE id = ?
+      const status = params[0];
+      const reviewNotes = params[1];
+      const regId = params[2];
+      const reg = store.registrations.find((r: any) => r.id === regId);
+      if (reg) {
+        reg.status = status;
+        reg.review_notes = reviewNotes;
+        reg.reviewed_at = new Date().toISOString();
+      }
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('insert into certificates')) {
+      store.certificates.unshift({
+        id: params[0],
+        student_id: params[1],
+        activity_id: params[2],
+        title: params[3],
+        description: params[4],
+        certificate_number: params[5],
+        file_url: params[6] || 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80',
+        issue_date: new Date().toISOString().split('T')[0],
+      });
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('delete from activities')) {
+      const actId = params[0];
+      store.activities = store.activities.filter((a: any) => a.id !== actId);
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('delete from announcements')) {
+      const annId = params[0];
+      store.announcements = store.announcements.filter((a: any) => a.id !== annId);
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('delete from registrations')) {
+      const regId = params[0];
+      store.registrations = store.registrations.filter((r: any) => r.id !== regId);
+      return { changes: 1 };
+    }
 
     if (lower.startsWith('insert into announcements')) {
       store.announcements.unshift({

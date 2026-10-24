@@ -71,6 +71,14 @@ export default function TeacherActivitiesPage() {
     fetchActivities();
     ApiClient.get<Category[]>('/activities/categories').then((c) => setCategories(c || []));
     ApiClient.get<ClubOrganization[]>('/activities/organizations').then((cl) => setClubs(cl || []));
+
+    const unsubscribe = realtimeSync.subscribe((msg) => {
+      if (msg.type === 'ACTIVITY_CREATED') {
+        fetchActivities();
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const handleCreateActivity = async (e: React.FormEvent) => {

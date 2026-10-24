@@ -200,7 +200,7 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
       if (sortBy === 'popularity') {
         sql += ' ORDER BY a.current_participants DESC';
       } else if (sortBy === 'points') {
-        sql += ' ORDER BY a.points_value DESC';
+        sql += ' ORDER BY a.points DESC';
       } else if (sortBy === 'title') {
         sql += ' ORDER BY a.title ASC';
       } else {
@@ -306,9 +306,18 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
       const authUser = getAuthUser(request);
       const studentId = authUser?.studentId || 'std-01';
 
-      const allBadges = await serverDb.query('SELECT * FROM badges ORDER BY points_required ASC');
+      let allBadges = await serverDb.query('SELECT * FROM badges ORDER BY name ASC');
+      if (!allBadges || allBadges.length === 0) {
+        allBadges = [
+          { id: 'bdg-01', name: 'Active Participant', slug: 'active-participant', description: 'Actively registered, participated, and completed at least 3 school extracurricular activities.', icon_name: 'Medal', color: '#CD7F32', tier: 'Bronze', criteria: 'Complete 3 sanctioned extracurricular activities.' },
+          { id: 'bdg-02', name: 'Outstanding Leader', slug: 'outstanding-leader', description: 'Demonstrated exemplary servant leadership in student governance or activity facilitation.', icon_name: 'Trophy', color: '#F59E0B', tier: 'Gold', criteria: 'Lead an organization project or receive teacher leadership commendation.' },
+          { id: 'bdg-03', name: 'Consistent Participant', slug: 'consistent-participant', description: 'Maintained 90% or higher attendance across all activity sessions.', icon_name: 'Star', color: '#94A3B8', tier: 'Silver', criteria: 'Maintain 90% attendance across extracurricular activities.' },
+          { id: 'bdg-04', name: 'Goal Achiever', slug: 'goal-achiever', description: 'Successfully reached 5 milestones and collected official skill validations.', icon_name: 'Target', color: '#10B981', tier: 'Platinum', criteria: 'Complete 5 student development milestones.' },
+        ];
+      }
+
       const awarded = await serverDb.query(
-        'SELECT badge_id, awarded_at FROM student_badges WHERE student_id = ?',
+        'SELECT badge_id, earned_at as awarded_at FROM student_badges WHERE student_id = ?',
         [studentId]
       );
       const awardedMap = new Map(awarded.map((a: any) => [a.badge_id, a.awarded_at]));
@@ -324,7 +333,15 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
 
     // 10. ALL BADGES
     if (path === 'achievements/badges') {
-      const badges = await serverDb.query('SELECT * FROM badges ORDER BY points_required ASC');
+      let badges = await serverDb.query('SELECT * FROM badges ORDER BY name ASC');
+      if (!badges || badges.length === 0) {
+        badges = [
+          { id: 'bdg-01', name: 'Active Participant', slug: 'active-participant', description: 'Actively registered, participated, and completed at least 3 school extracurricular activities.', icon_name: 'Medal', color: '#CD7F32', tier: 'Bronze', criteria: 'Complete 3 sanctioned extracurricular activities.' },
+          { id: 'bdg-02', name: 'Outstanding Leader', slug: 'outstanding-leader', description: 'Demonstrated exemplary servant leadership in student governance or activity facilitation.', icon_name: 'Trophy', color: '#F59E0B', tier: 'Gold', criteria: 'Lead an organization project or receive teacher leadership commendation.' },
+          { id: 'bdg-03', name: 'Consistent Participant', slug: 'consistent-participant', description: 'Maintained 90% or higher attendance across all activity sessions.', icon_name: 'Star', color: '#94A3B8', tier: 'Silver', criteria: 'Maintain 90% attendance across extracurricular activities.' },
+          { id: 'bdg-04', name: 'Goal Achiever', slug: 'goal-achiever', description: 'Successfully reached 5 milestones and collected official skill validations.', icon_name: 'Target', color: '#10B981', tier: 'Platinum', criteria: 'Complete 5 student development milestones.' },
+        ];
+      }
       return NextResponse.json({ success: true, data: badges });
     }
 
@@ -872,6 +889,128 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       body = await request.json();
     } catch {}
 
+    // 0. AUTH REGISTER (Learner Self-Service Enrollment)
+    if (path === 'auth/register') {
+      const {
+        firstName,
+        lastName,
+        email,
+        password,
+        studentIdNumber,
+        gradeLevel,
+        section,
+        trackStrand,
+        guardianName,
+        guardianPhone,
+      } = body;
+
+      if (!email || !password || !firstName || !lastName) {
+        return NextResponse.json(
+          { success: false, message: 'Please provide all required fields: first name, last name, email, and password.' },
+          { status: 400 }
+        );
+      }
+
+      const normalizedEmail = String(email).toLowerCase().trim();
+
+      // Check if user already exists
+      const existingUser = await serverDb.get('SELECT id FROM users WHERE email = ?', [normalizedEmail]);
+      if (existingUser) {
+        return NextResponse.json(
+          { success: false, message: 'An account with this email address already exists. Please log in.' },
+          { status: 400 }
+        );
+      }
+
+      const passwordHash = await bcrypt.hash(password, 10);
+      const userId = `usr-std-${Date.now()}`;
+      const studentId = `std-${Date.now()}`;
+      const lrn = studentIdNumber ? String(studentIdNumber).trim() : `1098${Math.floor(10000000 + Math.random() * 90000000)}`;
+
+      // Insert User
+      await serverDb.run(
+        `INSERT INTO users (id, email, password_hash, role, status, first_name, last_name, avatar_url, phone, created_at, updated_at)
+         VALUES (?, ?, ?, 'STUDENT', 'ACTIVE', ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [
+          userId,
+          normalizedEmail,
+          passwordHash,
+          firstName.trim(),
+          lastName.trim(),
+          'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=256&q=80',
+          guardianPhone || null,
+        ]
+      );
+
+      // Insert Student
+      await serverDb.run(
+        `INSERT INTO students (id, user_id, student_id_number, grade_level, section, track_strand, guardian_name, guardian_phone, bio, attendance_rate, streak_count, total_points, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 100.00, 1, 50, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        [
+          studentId,
+          userId,
+          lrn,
+          gradeLevel || 'Grade 10',
+          section || 'Rizal',
+          trackStrand || 'STEM',
+          guardianName || null,
+          guardianPhone || null,
+          `Enrolled student at Centrala National High School (${gradeLevel || 'Grade 10'} - ${section || 'Rizal'})`,
+        ]
+      );
+
+      // Create welcome notification
+      await createNotification(
+        userId,
+        `Welcome to CNHS StudentX, ${firstName}! 🎓`,
+        'Your extracurricular account has been successfully created. Explore sanctioned clubs, register for activities, and earn DepEd learner points.',
+        'success',
+        '/student/discover'
+      );
+
+      const studentProfile = {
+        id: studentId,
+        user_id: userId,
+        student_id_number: lrn,
+        grade_level: gradeLevel || 'Grade 10',
+        section: section || 'Rizal',
+        track_strand: trackStrand || 'STEM',
+        attendance_rate: 100.0,
+        streak_count: 1,
+        total_points: 50,
+      };
+
+      const tokenPayload = {
+        userId,
+        email: normalizedEmail,
+        role: 'STUDENT',
+        studentId,
+      };
+
+      const accessToken = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '1d' });
+      const refreshToken = jwt.sign(tokenPayload, JWT_REFRESH_SECRET, { expiresIn: '7d' });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Student account registered successfully!',
+        data: {
+          accessToken,
+          refreshToken,
+          user: {
+            id: userId,
+            email: normalizedEmail,
+            role: 'STUDENT',
+            status: 'ACTIVE',
+            firstName: firstName.trim(),
+            lastName: lastName.trim(),
+            avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=256&q=80',
+            phone: guardianPhone || null,
+            student: studentProfile,
+          },
+        },
+      });
+    }
+
     // 1. AUTH LOGIN
     if (path === 'auth/login') {
       const { email, password } = body;
@@ -1193,8 +1332,32 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
     // 7. REGISTRATION SUBMIT
     if (path === 'registrations/register') {
       const authUser = getAuthUser(request);
-      const studentId = authUser?.studentId || 'std-01';
+      let studentId = authUser?.studentId;
+      if (!studentId && authUser?.userId) {
+        const std = await serverDb.get('SELECT id FROM students WHERE user_id = ?', [authUser.userId]);
+        studentId = std?.id;
+      }
+      if (!studentId) studentId = 'std-01';
+
       const { activityId } = body;
+      if (!activityId) {
+        return NextResponse.json({ success: false, message: 'Activity ID is required' }, { status: 400 });
+      }
+
+      // Check if student already registered
+      const existing = await serverDb.get(
+        'SELECT id, status FROM registrations WHERE student_id = ? AND activity_id = ?',
+        [studentId, activityId]
+      );
+      if (existing) {
+        return NextResponse.json({
+          success: false,
+          message: `You have already registered for this activity (Status: ${existing.status}).`,
+        }, { status: 400 });
+      }
+
+      const act = await serverDb.get('SELECT title FROM activities WHERE id = ?', [activityId]);
+      const actTitle = act?.title || 'Extracurricular Club';
 
       const regId = `reg-${Date.now()}`;
       await serverDb.run(
@@ -1203,11 +1366,18 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
         [regId, studentId, activityId]
       );
 
+      // Student info for notification
+      const studentInfo = await serverDb.get(
+        'SELECT u.first_name, u.last_name, s.grade_level, s.section FROM students s JOIN users u ON s.user_id = u.id WHERE s.id = ?',
+        [studentId]
+      );
+      const studentName = studentInfo ? `${studentInfo.first_name} ${studentInfo.last_name}` : 'Nicole Maquilan';
+
       // Notify teachers and admins
       await createNotification(
         'usr-teacher-01',
-        'New Participant Application 📝',
-        'A student submitted an extracurricular registration for adviser review.',
+        `New Application: ${studentName} 📝`,
+        `${studentName} (${studentInfo?.grade_level || 'Grade 10'} - ${studentInfo?.section || 'Rizal'}) applied for "${actTitle}".`,
         'info',
         '/teacher/registrations'
       );
@@ -1215,7 +1385,7 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       return NextResponse.json({
         success: true,
         message: 'Registration submitted for adviser approval',
-        data: { id: regId },
+        data: { id: regId, studentName, activityTitle: actTitle },
       });
     }
 
@@ -1236,7 +1406,7 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       await createNotification(
         'usr-student-01',
         `📢 ${title}`,
-        content.substring(0, 120) + '...',
+        content.length > 120 ? `${content.substring(0, 117)}...` : content,
         'info',
         '/announcements'
       );
@@ -1264,16 +1434,44 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
         maxParticipants,
         points,
         bannerImage,
+        registrationDeadline,
+        eligibilityGradeLevels,
+        requiredSkills,
       } = body;
 
+      if (!title || !date || !location) {
+        return NextResponse.json(
+          { success: false, message: 'Please provide activity title, date, and location.' },
+          { status: 400 }
+        );
+      }
+
       const actId = `act-${Date.now()}`;
+      const slug = `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')}-${Date.now().toString().slice(-4)}`;
+      const regDeadline = registrationDeadline ? new Date(registrationDeadline).toISOString() : new Date(`${date}T23:59:59.000Z`).toISOString();
+      const pointsVal = points ? parseInt(String(points), 10) : 30;
+      const maxParts = maxParticipants ? parseInt(String(maxParticipants), 10) : 30;
+      const defaultBanner = bannerImage || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80';
+      const grades = typeof eligibilityGradeLevels === 'string' ? eligibilityGradeLevels : JSON.stringify(eligibilityGradeLevels || ["Grade 7","Grade 8","Grade 9","Grade 10","Grade 11","Grade 12"]);
+      const skills = typeof requiredSkills === 'string' ? requiredSkills : JSON.stringify(requiredSkills || []);
+
       await serverDb.run(
-        `INSERT INTO activities (id, title, description, category_id, organization_id, organizer_id, location, date, start_time, end_time, max_participants, current_participants, points_value, status, registration_status, banner_image)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'Published', 'Registration Open', ?)`,
+        `INSERT INTO activities (
+          id, title, slug, description, category_id, organization_id, organizer_id,
+          location, date, start_time, end_time, registration_deadline,
+          max_participants, current_participants, points, status, registration_status,
+          banner_image, eligibility_grade_levels, required_skills
+        ) VALUES (
+          ?, ?, ?, ?, ?, ?, ?,
+          ?, ?, ?, ?, ?,
+          ?, 0, ?, 'Published', 'Registration Open',
+          ?, ?, ?
+        )`,
         [
           actId,
           title,
-          description,
+          slug,
+          description || 'Sanctioned extracurricular program at Centrala National High School.',
           categoryId || 'cat-01',
           organizationId || 'club-01',
           teacherId,
@@ -1281,9 +1479,12 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
           date,
           startTime || '08:00 AM',
           endTime || '04:00 PM',
-          maxParticipants || 30,
-          points || 30,
-          bannerImage || 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80',
+          regDeadline,
+          maxParts,
+          pointsVal,
+          defaultBanner,
+          grades,
+          skills,
         ]
       );
 
@@ -1291,7 +1492,7 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       await createNotification(
         'usr-student-01',
         `🌟 New Activity: ${title}`,
-        `Now open for registration at ${location}. Earn +${points || 30} development points!`,
+        `Now open for registration at ${location}. Earn +${pointsVal} development points!`,
         'success',
         '/student/discover'
       );
@@ -1299,28 +1500,35 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       return NextResponse.json({
         success: true,
         message: 'Activity published successfully!',
-        data: { id: actId },
+        data: { id: actId, title, slug },
       });
     }
 
     // 10. ISSUE CERTIFICATE (Teacher / Admin)
     if (path === 'certificates') {
+      const authUser = getAuthUser(request);
+      const issuerId = authUser?.userId || 'usr-teacher-01';
       const { studentId, activityId, title, description } = body;
       const certNumber = `CNHS-CERT-2026-${Math.floor(1000 + Math.random() * 9000)}`;
       const certId = `cert-${Date.now()}`;
+      const defaultPdf = 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80';
 
       await serverDb.run(
-        `INSERT INTO certificates (id, student_id, activity_id, certificate_number, title, description, issue_date, issuer_name, issuer_title, is_verified)
-         VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'Javidec Monsion', 'Club Adviser & Faculty Coordinator', 1)`,
-        [certId, studentId || 'std-01', activityId || 'act-01', certNumber, title, description]
+        `INSERT INTO certificates (id, student_id, activity_id, certificate_number, title, description, file_url, issue_date, issued_by, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?, 'VERIFIED')`,
+        [certId, studentId || 'std-01', activityId || 'act-01', certNumber, title, description || null, defaultPdf, issuerId]
       );
 
       // Award points (+50 points) for certificate
       await serverDb.run('UPDATE students SET total_points = total_points + 50 WHERE id = ?', [studentId || 'std-01']);
 
+      // Look up target student user_id
+      const std = await serverDb.get('SELECT user_id, first_name FROM students s JOIN users u ON s.user_id = u.id WHERE s.id = ?', [studentId || 'std-01']);
+      const targetUserId = std?.user_id || 'usr-student-01';
+
       // Notify student
       await createNotification(
-        'usr-student-01',
+        targetUserId,
         'Official Certificate Issued! 📜',
         `You have been awarded "${title}". Certificate #${certNumber} is now accredited.`,
         'success',
@@ -1336,28 +1544,49 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
 
     // 11. AWARD BADGE
     if (path === 'achievements/award-badge') {
+      const authUser = getAuthUser(request);
+      const teacherUserId = authUser?.userId || 'usr-teacher-01';
       const { studentId, badgeId } = body;
+
+      const badge = await serverDb.get('SELECT * FROM badges WHERE id = ?', [badgeId]);
+      const badgeName = badge?.name || 'Honor Badge';
+      const badgeTier = badge?.tier || 'Bronze';
+
       const existing = await serverDb.get(
         'SELECT * FROM student_badges WHERE student_id = ? AND badge_id = ?',
         [studentId, badgeId]
       );
 
       if (!existing) {
+        const sbId = `sb-${Date.now()}`;
         await serverDb.run(
-          'INSERT INTO student_badges (student_id, badge_id, awarded_at) VALUES (?, ?, CURRENT_TIMESTAMP)',
-          [studentId, badgeId]
+          `INSERT INTO student_badges (id, student_id, badge_id, earned_at, awarded_by, is_celebrated)
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?, true)
+           ON CONFLICT (student_id, badge_id) DO NOTHING`,
+          [sbId, studentId, badgeId, teacherUserId]
         );
       }
 
+      // Find the student's user_id
+      const student = await serverDb.get(
+        `SELECT s.user_id, u.first_name FROM students s JOIN users u ON s.user_id = u.id WHERE s.id = ?`,
+        [studentId]
+      );
+      const targetUserId = student?.user_id || 'usr-student-01';
+
       await createNotification(
-        'usr-student-01',
-        'Milestone Badge Conferred! 🏅',
-        'Congratulations! You have unlocked a new extracurricular honor badge.',
+        targetUserId,
+        `Honor Badge Conferred: ${badgeName}! 🏅`,
+        `Congratulations ${student?.first_name || 'Centralian'}! You were awarded the ${badgeName} (${badgeTier} Tier) badge by Adviser Javidec Monsion.`,
         'success',
         '/student/badges'
       );
 
-      return NextResponse.json({ success: true, message: 'Badge awarded successfully!' });
+      return NextResponse.json({
+        success: true,
+        message: `Badge "${badgeName}" awarded successfully!`,
+        data: { badgeName, badgeTier }
+      });
     }
 
     return NextResponse.json({ success: false, message: `Route /api/${path} not found` }, { status: 404 });
@@ -1385,28 +1614,62 @@ export async function PUT(request: NextRequest, { params }: { params: { path: st
       const { status, reviewNotes } = body;
 
       await serverDb.run(
-        'UPDATE registrations SET status = ?, review_notes = ? WHERE id = ?',
+        'UPDATE registrations SET status = ?, review_notes = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?',
         [status, reviewNotes || null, regId]
       );
 
+      // Find the registration details
+      const regInfo = await serverDb.get(
+        `SELECT r.activity_id, r.student_id, s.user_id, a.title as activity_title, u.first_name
+         FROM registrations r
+         LEFT JOIN students s ON r.student_id = s.id
+         LEFT JOIN users u ON s.user_id = u.id
+         LEFT JOIN activities a ON r.activity_id = a.id
+         WHERE r.id = ?`,
+        [regId]
+      );
+
       // If approved, increment activity participants
-      if (status === 'Approved') {
-        const reg = await serverDb.get('SELECT activity_id FROM registrations WHERE id = ?', [regId]);
-        if (reg?.activity_id) {
-          await serverDb.run('UPDATE activities SET current_participants = current_participants + 1 WHERE id = ?', [reg.activity_id]);
-        }
+      if (status === 'Approved' && regInfo?.activity_id) {
+        await serverDb.run(
+          'UPDATE activities SET current_participants = current_participants + 1 WHERE id = ?',
+          [regInfo.activity_id]
+        );
       }
 
-      // Notify student
+      // Notify the actual student
+      const targetUserId = regInfo?.user_id || 'usr-student-01';
+      const studentFirstName = regInfo?.first_name || 'Centralian';
+      const activityTitle = regInfo?.activity_title || 'Extracurricular Club';
+      const isApproved = status === 'Approved';
+
+      const notifTitle = isApproved ? `Registration Approved! 🎉` : `Registration ${status}`;
+      const notifMessage = isApproved
+        ? `Great news, ${studentFirstName}! Your registration for "${activityTitle}" has been approved by Adviser Javidec Monsion.${reviewNotes ? ` Adviser note: "${reviewNotes}"` : ''}`
+        : `Your registration for "${activityTitle}" was marked as ${status.toLowerCase()} by Adviser Javidec Monsion.${reviewNotes ? ` Reason: "${reviewNotes}"` : ''}`;
+
       await createNotification(
-        'usr-student-01',
-        `Registration ${status}! 🎉`,
-        `Your extracurricular club registration has been ${status.toLowerCase()} by Adviser Javidec Monsion.`,
-        status === 'Approved' ? 'success' : 'warning',
+        targetUserId,
+        notifTitle,
+        notifMessage,
+        isApproved ? 'success' : 'warning',
         '/student/my-activities'
       );
 
-      return NextResponse.json({ success: true, message: `Registration marked as ${status}` });
+      if (targetUserId !== 'usr-student-01' && regInfo?.student_id === 'std-01') {
+        await createNotification('usr-student-01', notifTitle, notifMessage, isApproved ? 'success' : 'warning', '/student/my-activities');
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `Registration marked as ${status}`,
+        data: {
+          id: regId,
+          status,
+          studentName: studentFirstName,
+          activityTitle,
+        }
+      });
     }
 
     // 2. UPDATE ACTIVITY DETAILS

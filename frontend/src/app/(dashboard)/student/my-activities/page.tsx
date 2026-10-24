@@ -9,6 +9,7 @@ import { QrScannerModal } from '@/components/attendance/QrScannerModal';
 import { Calendar, MapPin, Clock, QrCode, Trash2, CheckCircle, AlertCircle } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function MyActivitiesPage() {
   const [registrations, setRegistrations] = useState<Registration[]>([]);
@@ -26,6 +27,14 @@ export default function MyActivitiesPage() {
 
   useEffect(() => {
     fetchRegistrations();
+
+    const unsubscribe = realtimeSync.subscribe((msg) => {
+      if (msg.type === 'REGISTRATION_REVIEWED' || msg.type === 'REGISTRATION_SUBMITTED') {
+        fetchRegistrations();
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const handleCancelRegistration = async (regId: string) => {

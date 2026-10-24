@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Bell, CheckCheck, ExternalLink, Calendar, Award, FileCheck, CheckCircle } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -29,6 +30,12 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     fetchNotifications();
+
+    const unsubscribe = realtimeSync.subscribe(() => {
+      fetchNotifications();
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const handleMarkAllRead = async () => {

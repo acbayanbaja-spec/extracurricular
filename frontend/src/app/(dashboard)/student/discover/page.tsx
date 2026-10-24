@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/Button';
 import { Search, Filter, Compass, SlidersHorizontal, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { realtimeSync } from '@/lib/realtime';
+import { useAuth } from '@/context/AuthContext';
 
 export default function DiscoverActivitiesPage() {
+  const { user } = useAuth();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [search, setSearch] = useState('');
@@ -38,6 +40,14 @@ export default function DiscoverActivitiesPage() {
     ApiClient.get<Category[]>('/activities/categories')
       .then((cats) => setCategories(cats || []))
       .catch(() => {});
+
+    const unsubscribe = realtimeSync.subscribe((msg) => {
+      if (msg.type === 'ACTIVITY_CREATED') {
+        fetchActivities();
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -50,6 +60,7 @@ export default function DiscoverActivitiesPage() {
     try {
       await ApiClient.post('/registrations/register', { activityId });
       const act = activities.find((a) => a.id === activityId);
+      const studentDisplayName = user ? `${user.firstName} ${user.lastName}` : 'Nicole Maquilan';
       toast.success('Registration Submitted! 🎉', {
         description: 'Your registration request has been forwarded to the adviser for approval.',
       });
@@ -58,9 +69,9 @@ export default function DiscoverActivitiesPage() {
         {
           activityId,
           activityTitle: act?.title || 'Extracurricular Club',
-          studentName: 'Nicole Maquilan',
+          studentName: studentDisplayName,
         },
-        'Nicole Maquilan',
+        studentDisplayName,
         'STUDENT'
       );
       fetchActivities();
