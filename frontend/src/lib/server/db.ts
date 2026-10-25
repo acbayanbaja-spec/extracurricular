@@ -243,8 +243,20 @@ function initFallbackStore() {
     },
   ];
 
-  const registrations = [
+  const attendance_records = [
     {
+      id: 'rec-01',
+      session_id: 'ses-01',
+      activity_id: 'act-01',
+      student_id: 'std-01',
+      status: 'Present',
+      check_in_time: '2026-10-15T08:14:22.000Z',
+      check_in_method: 'qr_scan',
+      notes: 'Verified via dynamic QR code check-in',
+    },
+  ];
+
+  const registrations = [    {
       id: 'reg-01',
       student_id: 'std-01',
       activity_id: 'act-01',
@@ -361,6 +373,7 @@ function initFallbackStore() {
     announcements,
     sessions,
     registrations,
+    attendance_records,
     notifications,
     badges,
     student_badges,
@@ -479,10 +492,75 @@ export const serverDb = {
     }
 
     if (lower.includes('from attendance_sessions')) {
+      if (lower.includes('where qr_code_token = ?')) {
+        return store.sessions.filter((s: any) => s.qr_code_token === params[0]) as T[];
+      }
+      if (lower.includes('where id = ?') || lower.includes('where s.id = ?')) {
+        return store.sessions.filter((s: any) => s.id === params[0]) as T[];
+      }
+      if (lower.includes('where activity_id = ?') || lower.includes('where s.activity_id = ?')) {
+        return store.sessions.filter((s: any) => s.activity_id === params[0]) as T[];
+      }
       return store.sessions as T[];
     }
 
+    if (lower.includes('from attendance_records')) {
+      if (lower.includes('session_id = ? and student_id = ?')) {
+        const [sessionId, studentId] = params;
+        return store.attendance_records.filter(
+          (r: any) => r.session_id === sessionId && r.student_id === studentId
+        ) as T[];
+      }
+      if (lower.includes('student_id = ?')) {
+        return store.attendance_records.filter((r: any) => r.student_id === params[0]) as T[];
+      }
+      if (lower.includes('session_id = ?')) {
+        return store.attendance_records.filter((r: any) => r.session_id === params[0]) as T[];
+      }
+      return store.attendance_records as T[];
+    }
+
     if (lower.includes('from registrations')) {
+      if (lower.includes('left join attendance_records')) {
+        const studentId = params[0];
+        return store.registrations
+          .filter((r: any) => r.student_id === studentId && (r.status === 'Approved' || r.status === 'Completed'))
+          .flatMap((r: any) =>
+            store.sessions
+              .filter((s: any) => s.activity_id === r.activity_id)
+              .map((s: any) => {
+                const rec: any = store.attendance_records.find(
+                  (ar: any) => ar.session_id === s.id && ar.student_id === studentId
+                ) || {};
+                const act: any = store.activities.find((a: any) => a.id === s.activity_id) || {};
+                const cat: any = store.categories.find((c: any) => c.id === act.category_id) || {};
+                return {
+                  id: rec.id || s.id,
+                  record_id: rec.id || null,
+                  session_title: s.session_title,
+                  session_date: s.session_date,
+                  start_time: s.start_time,
+                  end_time: s.end_time,
+                  activity_title: act.title || 'Extracurricular Program',
+                  activity_id: act.id,
+                  category_name: cat.name || 'General',
+                  category_color: cat.color || '#4F46E5',
+                  status: rec.status || null,
+                  check_in_time: rec.check_in_time || null,
+                  check_in_method: rec.check_in_method || null,
+                  notes: rec.notes || null,
+                };
+              })
+          ) as T[];
+      }
+
+      if (lower.includes('where activity_id = ? and student_id = ?')) {
+        const [activityId, studentId] = params;
+        return store.registrations.filter(
+          (r: any) => r.activity_id === activityId && r.student_id === studentId
+        ) as T[];
+      }
+
       if (lower.includes('where student_id = ? and activity_id = ?')) {
         const [studentId, activityId] = params;
         return store.registrations.filter(
@@ -763,6 +841,41 @@ export const serverDb = {
           student.guardian_name = guardianName || student.guardian_name;
           student.guardian_phone = guardianPhone || student.guardian_phone;
         }
+      }
+      if (lower.includes('total_points')) {
+        const studentId = params[params.length - 1];
+        const student = store.students.find((s: any) => s.id === studentId);
+        if (student) {
+          const literal = lower.match(/total_points\s*\+\s*(\d+)/);
+          const delta = literal ? parseInt(literal[1], 10) : Number(params[0]) || 25;
+          student.total_points = Math.max(0, (student.total_points || 0) + delta);
+          if (lower.includes('streak_count')) student.streak_count = (student.streak_count || 0) + 1;
+        }
+      }
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('insert into attendance_records')) {
+      store.attendance_records.unshift({
+        id: params[0],
+        session_id: params[1],
+        activity_id: params[2],
+        student_id: params[3],
+        status: params[4],
+        check_in_time: params[5],
+        check_in_method: params[6],
+        notes: params[7],
+      });
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('update attendance_records')) {
+      const recordId = params[params.length - 1];
+      const record = store.attendance_records.find((r: any) => r.id === recordId);
+      if (record) {
+        record.status = params[0];
+        record.check_in_time = params[1] || record.check_in_time;
+        if (params.length >= 4) record.notes = params[2];
       }
       return { changes: 1 };
     }

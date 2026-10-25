@@ -32,6 +32,14 @@ async function resolveStudentId(authUser: any): Promise<string | null> {
   return authUser.studentId || null;
 }
 
+// Staff display label for the person who performed an action (the JWT carries no name claim)
+async function getStaffLabel(userId?: string): Promise<string> {
+  if (!userId) return 'the Activity Adviser';
+  const u = await serverDb.get('SELECT first_name, last_name FROM users WHERE id = ?', [userId]);
+  const name = u ? `${u.first_name} ${u.last_name}`.trim() : '';
+  return name ? `Adviser ${name}` : 'the Activity Adviser';
+}
+
 // Helper to create notifications in DB
 async function createNotification(userId: string, title: string, message: string, type = 'system', link?: string) {
   try {
@@ -859,50 +867,73 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
     // 20. STUDENT ATTENDANCE HISTORY
     if (path === 'attendance/my' || path.startsWith('attendance/student/')) {
       const authUser = getAuthUser(request);
-      const studentId = path === 'attendance/my' ? (authUser?.studentId || 'std-01') : path.split('/')[2];
+      const studentId =
+        (await resolveStudentId(authUser)) ||
+        (path === 'attendance/my' ? authUser?.studentId : path.split('/')[2]) ||
+        'std-01';
 
-      const history = await serverDb.query(
-        `SELECT ar.*, s.session_title, s.session_date, s.start_time, s.end_time,
+      const rows = await serverDb.query(
+        `SELECT COALESCE(ar.id, s.id) as id, ar.id as record_id,
+                s.session_title, s.session_date, s.start_time, s.end_time,
                 a.title as activity_title, a.id as activity_id,
-                c.name as category_name, c.color as category_color
-         FROM attendance_records ar
-         JOIN attendance_sessions s ON ar.session_id = s.id
-         JOIN activities a ON ar.activity_id = a.id
+                c.name as category_name, c.color as category_color,
+                ar.status, ar.check_in_time, ar.check_in_method, ar.notes
+         FROM registrations r
+         JOIN attendance_sessions s ON s.activity_id = r.activity_id
+         JOIN activities a ON a.id = s.activity_id
          LEFT JOIN categories c ON a.category_id = c.id
-         WHERE ar.student_id = ?
+         LEFT JOIN attendance_records ar ON ar.session_id = s.id AND ar.student_id = r.student_id
+         WHERE r.student_id = ? AND r.status IN ('Approved', 'Completed')
          ORDER BY s.session_date DESC`,
         [studentId]
       );
 
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const history = rows.map((row: any) => {
+        const dateStr = String(row.session_date || '').slice(0, 10);
+        return {
+          ...row,
+          status: row.status || (dateStr > todayStr ? 'Scheduled' : 'Absent'),
+        };
+      });
+
       const presentCount = history.filter((h: any) => h.status === 'Present').length;
       const lateCount = history.filter((h: any) => h.status === 'Late').length;
       const absentCount = history.filter((h: any) => h.status === 'Absent').length;
+      const scheduledCount = history.filter((h: any) => h.status === 'Scheduled').length;
+      const heldSessions = history.length - scheduledCount;
+
+      const studentRow = await serverDb.get(
+        'SELECT attendance_rate, streak_count, total_points FROM students WHERE id = ?',
+        [studentId]
+      );
+
+      const computedRate = heldSessions > 0
+        ? Math.round(((presentCount + lateCount) / heldSessions) * 1000) / 10
+        : 0;
+
+      let streak = Number(studentRow?.streak_count || 0);
+      if (!streak) {
+        for (const record of history) {
+          if (record.status === 'Present' || record.status === 'Late') streak += 1;
+          else if (record.status === 'Absent') break;
+        }
+      }
 
       return NextResponse.json({
         success: true,
         data: {
           stats: {
-            totalSessions: Math.max(history.length, 5),
-            present: Math.max(presentCount, 4),
+            totalSessions: heldSessions,
+            present: presentCount,
             late: lateCount,
             absent: absentCount,
-            attendanceRate: 96.2,
-            streakCount: 4,
+            scheduled: scheduledCount,
+            attendanceRate: Number(studentRow?.attendance_rate ?? computedRate) || computedRate,
+            streakCount: streak,
+            totalPoints: Number(studentRow?.total_points || 0),
           },
-          history: history.length > 0 ? history : [
-            {
-              id: 'rec-01',
-              activity_title: 'Annual Youth Leadership Summit & Parliamentary Simulation 2026',
-              session_title: 'Day 1: Parliamentary Procedures & Keynote',
-              session_date: '2026-10-14',
-              start_time: '08:00 AM',
-              end_time: '12:00 PM',
-              status: 'Present',
-              check_in_method: 'qr_scan',
-              check_in_time: '2026-10-14T08:14:22.000Z',
-              notes: 'Verified via dynamic QR code check-in',
-            },
-          ],
+          history,
         },
       });
     }
@@ -1302,71 +1333,171 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
     // 4. ATTENDANCE QR SCAN (Student check-in)
     if (path === 'attendance/qr/scan') {
       const authUser = getAuthUser(request);
-      const studentId = (await resolveStudentId(authUser)) || authUser?.studentId || 'std-01';
-      const { sessionId, token } = body;
-
-      // Verify or find session
-      let session = null;
-      if (sessionId) {
-        session = await serverDb.get('SELECT * FROM attendance_sessions WHERE id = ?', [sessionId]);
-      }
-      if (!session && token) {
-        session = await serverDb.get('SELECT * FROM attendance_sessions WHERE qr_code_token = ?', [token]);
+      if (!authUser) {
+        return NextResponse.json(
+          { success: false, message: 'Please sign in as a learner to check your attendance.' },
+          { status: 401 }
+        );
       }
 
-      const activeSessionId = session ? session.id : (sessionId || 'ses-01');
-      const activeActivityId = session ? session.activity_id : 'act-01';
+      const studentId = (await resolveStudentId(authUser)) || authUser?.studentId;
+      if (!studentId) {
+        return NextResponse.json(
+          { success: false, message: 'This account is not linked to a learner profile yet.' },
+          { status: 400 }
+        );
+      }
 
-      // Check if attendance record already exists
+      let rawToken = typeof body.token === 'string' ? body.token.trim() : '';
+      let rawSessionId = typeof body.sessionId === 'string' ? body.sessionId.trim() : '';
+
+      // A pasted QR payload is JSON; the token alone is also accepted
+      if (rawToken.startsWith('{')) {
+        try {
+          const decoded = JSON.parse(rawToken);
+          if (decoded?.token) {
+            rawToken = String(decoded.token).trim();
+            if (!rawSessionId && decoded.sessionId) rawSessionId = String(decoded.sessionId).trim();
+          }
+        } catch {}
+      }
+
+      if (!rawToken && !rawSessionId) {
+        return NextResponse.json(
+          { success: false, message: 'Scan the session QR code or enter the attendance token shown beneath it.' },
+          { status: 400 }
+        );
+      }
+
+      let session: any = null;
+      if (rawToken) {
+        session = await serverDb.get('SELECT * FROM attendance_sessions WHERE qr_code_token = ?', [rawToken]);
+      }
+      if (!session && rawSessionId) {
+        session = await serverDb.get('SELECT * FROM attendance_sessions WHERE id = ?', [rawSessionId]);
+      }
+
+      if (!session) {
+        return NextResponse.json(
+          { success: false, message: 'That is not a valid CNHS attendance code. Ask your adviser to project the live session QR again and rescan.' },
+          { status: 400 }
+        );
+      }
+
+      if (session.qr_expires_at && new Date(session.qr_expires_at).getTime() < Date.now()) {
+        return NextResponse.json(
+          { success: false, message: 'This session code has expired. Ask your adviser to refresh the QR code, then scan again.' },
+          { status: 400 }
+        );
+      }
+
+      const enrolment = await serverDb.get(
+        'SELECT status FROM registrations WHERE activity_id = ? AND student_id = ?',
+        [session.activity_id, studentId]
+      );
+      if (!enrolment) {
+        return NextResponse.json(
+          { success: false, message: 'You are not enrolled in this activity. Register for it first, then check in.' },
+          { status: 403 }
+        );
+      }
+      if (!['Approved', 'Completed'].includes(enrolment.status)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Your registration is ${String(enrolment.status).toLowerCase()} — an adviser must approve it before you can check in.`,
+          },
+          { status: 403 }
+        );
+      }
+
+      const activity = await serverDb.get('SELECT * FROM activities WHERE id = ?', [session.activity_id]);
+      const earnedPoints = Number(activity?.points ?? activity?.points_value ?? 25) || 25;
+      const nowIso = new Date().toISOString();
+
       const existing = await serverDb.get(
-        'SELECT id FROM attendance_records WHERE session_id = ? AND student_id = ?',
-        [activeSessionId, studentId]
+        'SELECT * FROM attendance_records WHERE session_id = ? AND student_id = ?',
+        [session.id, studentId]
       );
 
+      if (existing && existing.status === 'Present') {
+        return NextResponse.json({
+          success: true,
+          message: 'You are already checked in for this session.',
+          data: {
+            recordId: existing.id,
+            studentId,
+            checkInTime: existing.check_in_time || nowIso,
+            status: 'Present',
+            alreadyPresent: true,
+            pointsAwarded: 0,
+            sessionTitle: session.session_title,
+            activityTitle: activity?.title || 'Extracurricular Activity',
+          },
+        });
+      }
+
       const recordId = existing ? existing.id : `rec-${Date.now()}`;
-      const nowIso = new Date().toISOString();
+      const checkInNote = 'Verified via dynamic QR code check-in';
 
       if (existing) {
         await serverDb.run(
           `UPDATE attendance_records 
-           SET status = 'Present', check_in_time = ?, check_in_method = 'qr_scan'
+           SET status = ?, check_in_time = ?, check_in_method = 'qr_scan', notes = ?
            WHERE id = ?`,
-          [nowIso, recordId]
+          ['Present', nowIso, checkInNote, recordId]
         );
       } else {
         await serverDb.run(
-          `INSERT INTO attendance_records (id, session_id, activity_id, student_id, status, check_in_time, check_in_method)
-           VALUES (?, ?, ?, ?, 'Present', ?, 'qr_scan')`,
-          [recordId, activeSessionId, activeActivityId, studentId, nowIso]
+          `INSERT INTO attendance_records 
+           (id, session_id, activity_id, student_id, status, check_in_time, check_in_method, notes)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [recordId, session.id, session.activity_id, studentId, 'Present', nowIso, 'qr_scan', checkInNote]
         );
       }
 
-      // Award points (+25 points) and update streak
       await serverDb.run(
         `UPDATE students 
-         SET total_points = total_points + 25, 
+         SET total_points = total_points + ?, 
              streak_count = streak_count + 1,
              attendance_rate = LEAST(100.0, attendance_rate + 0.5)
          WHERE id = ?`,
-        [studentId]
+        [earnedPoints, studentId]
       );
 
-      // Create confirmation notification for student
+      const learner = await serverDb.get('SELECT first_name, last_name FROM users WHERE id = ?', [authUser.userId]);
+      const learnerName = learner ? `${learner.first_name} ${learner.last_name}`.trim() : 'A learner';
+
       await createNotification(
-        authUser?.userId || 'usr-student-01',
-        'Official Attendance Verified! ✅',
-        'Your QR check-in was successfully recorded. +25 development points awarded.',
-        'attendance'
+        authUser.userId,
+        'Attendance verified ✅',
+        `You checked in to ${activity?.title || 'the session'} (${session.session_title}). +${earnedPoints} growth points awarded.`,
+        'attendance',
+        '/student/attendance'
       );
+
+      if (session.created_by && session.created_by !== authUser.userId) {
+        await createNotification(
+          session.created_by,
+          'Learner checked in by QR',
+          `${learnerName} scanned your session QR for "${session.session_title}".`,
+          'attendance',
+          '/teacher/attendance'
+        );
+      }
 
       return NextResponse.json({
         success: true,
-        message: 'Verified and checked in via Centrala QR token! +25 points awarded.',
+        message: `Checked in successfully. +${earnedPoints} growth points awarded.`,
         data: {
           recordId,
           studentId,
           checkInTime: nowIso,
           status: 'Present',
+          alreadyPresent: false,
+          pointsAwarded: earnedPoints,
+          sessionTitle: session.session_title,
+          activityTitle: activity?.title || 'Extracurricular Activity',
         },
       });
     }
@@ -1712,7 +1843,7 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       await createNotification(
         targetUserId,
         'Official Certificate Issued! 📜',
-        `You have been awarded "${title}". Certificate #${certNumber} is now accredited and ready in your portfolio.`,
+        `You have been awarded "${title}" by ${await getStaffLabel(issuerId)}. Certificate #${certNumber} is now accredited and ready in your portfolio.`,
         'certificate',
         '/student/certificates'
       );
@@ -1759,7 +1890,7 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       await createNotification(
         targetUserId,
         `Honor Badge Conferred: ${badgeName}! 🏅`,
-        `Congratulations ${student?.first_name || 'Centralian'}! You were awarded the ${badgeName} (${badgeTier} Tier) badge by Adviser Javidec Monsion.`,
+        `Congratulations ${student?.first_name || 'Centralian'}! You were awarded the ${badgeName} (${badgeTier} Tier) badge by ${await getStaffLabel(teacherUserId)}.`,
         'badge',
         '/student/badges'
       );
@@ -1793,17 +1924,13 @@ export async function PUT(request: NextRequest, { params }: { params: { path: st
     } catch {}
 
     // 1. REVIEW REGISTRATION STATUS
-    // 1. REVIEW REGISTRATION STATUS
     if (path.startsWith('registrations/') && path.endsWith('/status')) {
       const regId = path.split('/')[1];
       const { status, reviewNotes } = body;
       const authUser = getAuthUser(request);
       const reviewerId = authUser?.userId || 'usr-teacher-01';
 
-      const reviewer = await serverDb.get('SELECT first_name, last_name FROM users WHERE id = ?', [reviewerId]);
-      const reviewerName = reviewer
-        ? `Adviser ${reviewer.first_name} ${reviewer.last_name}`
-        : 'the Activity Adviser';
+      const reviewerName = await getStaffLabel(reviewerId);
 
       await serverDb.run(
         'UPDATE registrations SET status = ?, review_notes = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?',
@@ -1916,6 +2043,7 @@ export async function PUT(request: NextRequest, { params }: { params: { path: st
         const activityTitle = title ?? act.title;
         const activityPoints = act.points || act.points_value || 20;
         const issuerId = getAuthUser(request)?.userId || 'usr-teacher-01';
+        const issuerLabel = await getStaffLabel(issuerId);
 
         for (const p of participants) {
           const alreadyCertified = await serverDb.get(
@@ -1956,7 +2084,7 @@ export async function PUT(request: NextRequest, { params }: { params: { path: st
           await createNotification(
             p.user_id,
             'Certificate Auto-Issued! 📜',
-            `Congratulations ${p.first_name || 'Centralian'}! "${certTitle}" (No. ${certNumber}) has been added to your credentials for completing "${activityTitle}". +${activityPoints} development points awarded.`,
+            `Congratulations ${p.first_name || 'Centralian'}! "${certTitle}" (No. ${certNumber}) was conferred by ${issuerLabel} and added to your credentials for completing "${activityTitle}". +${activityPoints} development points awarded.`,
             'certificate',
             '/student/certificates'
           );

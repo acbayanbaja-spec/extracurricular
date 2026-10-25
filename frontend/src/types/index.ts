@@ -178,7 +178,8 @@ export interface AttendanceRecord {
   session_id: string;
   activity_id: string;
   student_id: string;
-  status: 'Present' | 'Absent' | 'Late' | 'Excused';
+  // 'Scheduled' is derived by the API for enrolled sessions that have not happened yet
+  status: 'Present' | 'Absent' | 'Late' | 'Excused' | 'Scheduled';
   check_in_time?: string | null;
   check_in_method?: string;
   notes?: string | null;
@@ -201,6 +202,8 @@ export interface AttendanceStats {
   absent: number;
   late: number;
   excused: number;
+  scheduled?: number;
+  totalPoints?: number;
   attendanceRate: number;
   streakCount: number;
 }

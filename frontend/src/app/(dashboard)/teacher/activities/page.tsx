@@ -21,8 +21,10 @@ import {
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { realtimeSync } from '@/lib/realtime';
+import { useAuth } from '@/context/AuthContext';
 
 export default function TeacherActivitiesPage() {
+  const { user } = useAuth();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [clubs, setClubs] = useState<ClubOrganization[]>([]);
@@ -93,7 +95,7 @@ export default function TeacherActivitiesPage() {
       realtimeSync.broadcast(
         'ACTIVITY_CREATED',
         { title: newActivity.title },
-        'Javidec Monsion',
+        user ? `${user.firstName} ${user.lastName}`.trim() : 'Activity Adviser',
         'TEACHER'
       );
       setIsCreateModalOpen(false);

@@ -7,11 +7,13 @@ import { StudentProfile, Badge as BadgeType, Activity } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
-import { Users, Award, FileCheck, ExternalLink, Search, Flame } from 'lucide-react';
+import { Users, Award, FileCheck, ExternalLink, Search, Flame, ShieldCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { realtimeSync } from '@/lib/realtime';
+import { useAuth } from '@/context/AuthContext';
 
 export default function TeacherStudentsPage() {
+  const { user } = useAuth();
   const [students, setStudents] = useState<any[]>([]);
   const [badges, setBadges] = useState<BadgeType[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -69,7 +71,7 @@ export default function TeacherStudentsPage() {
           badgeName: badgeObj?.name || 'Honor Badge',
           badgeTier: badgeObj?.tier || 'Bronze',
         },
-        'Javidec Monsion',
+        user ? `${user.firstName} ${user.lastName}`.trim() : 'Activity Adviser',
         'TEACHER'
       );
       setSelectedStudentForBadge(null);
@@ -94,7 +96,7 @@ export default function TeacherStudentsPage() {
       realtimeSync.broadcast(
         'CERTIFICATE_ISSUED',
         { title: certForm.title, studentName: selectedStudentForCert.first_name },
-        'Javidec Monsion',
+        user ? `${user.firstName} ${user.lastName}`.trim() : 'Activity Adviser',
         'TEACHER'
       );
       setSelectedStudentForCert(null);
@@ -290,12 +292,26 @@ export default function TeacherStudentsPage() {
             />
           </div>
 
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20 p-3 flex items-start gap-2.5">
+            <ShieldCheck className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0 mt-0.5" />
+            <div className="text-[11px] text-emerald-900 dark:text-emerald-200 leading-relaxed">
+              <p className="font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                Signing as {user ? `${user.firstName} ${user.lastName}`.trim() : 'Activity Adviser'}
+              </p>
+              <p className="mt-0.5">
+                Your name is recorded as the conferring authority and prints on the learner&apos;s certificate. Approved
+                learners are also certified automatically when you mark an activity <span className="font-bold">Completed</span> —
+                use this form for extra merit credentials.
+              </p>
+            </div>
+          </div>
+
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
             <Button type="button" variant="outline" size="sm" onClick={() => setSelectedStudentForCert(null)}>
               Cancel
             </Button>
             <Button type="submit" size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
-              Issue & Accredit Certificate
+              Issue &amp; Accredit Certificate
             </Button>
           </div>
         </form>

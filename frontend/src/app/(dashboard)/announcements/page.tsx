@@ -55,7 +55,7 @@ export default function AnnouncementsPage() {
       realtimeSync.broadcast(
         'ANNOUNCEMENT_POSTED',
         newNotice,
-        user ? `${user.firstName} ${user.lastName}` : 'Adviser Javidec Monsion',
+        user ? `${user.firstName} ${user.lastName}`.trim() : 'Activity Adviser',
         user?.role
       );
       setIsCreateOpen(false);

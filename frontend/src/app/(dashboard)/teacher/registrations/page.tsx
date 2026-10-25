@@ -10,8 +10,10 @@ import { ClipboardCheck, CheckCircle2, XCircle, Search, Filter, User, Users2, Ma
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { realtimeSync } from '@/lib/realtime';
+import { useAuth } from '@/context/AuthContext';
 
 export default function TeacherRegistrationsPage() {
+  const { user } = useAuth();
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [selectedActivity, setSelectedActivity] = useState('all');
@@ -67,7 +69,7 @@ export default function TeacherRegistrationsPage() {
           studentName: activeReg.first_name,
           activityTitle: activeReg.activity_title,
         },
-        'Javidec Monsion',
+        user ? `${user.firstName} ${user.lastName}`.trim() : 'Activity Adviser',
         'TEACHER'
       );
 

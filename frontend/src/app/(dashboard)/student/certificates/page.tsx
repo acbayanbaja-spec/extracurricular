@@ -57,6 +57,20 @@ export default function StudentCertificatesPage() {
         </p>
       </div>
 
+      {/* Who issues certificates */}
+      <div className="rounded-2xl border border-indigo-200 bg-indigo-50/60 dark:border-indigo-900/40 dark:bg-indigo-950/20 p-4 flex items-start gap-3 text-xs text-indigo-900 dark:text-indigo-200">
+        <ShieldCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+        <div>
+          <p className="font-bold">Who confers these certificates?</p>
+          <p className="mt-0.5 text-indigo-800/90 dark:text-indigo-300">
+            Your <span className="font-bold">activity adviser</span> — or the school administrator — signs every credential. Two things trigger issuance:
+            your adviser marks the activity <span className="font-bold">Completed</span> (every approved learner is certified automatically), or your adviser
+            confers a commendation to you personally from the Student Progress roster. Each certificate gets a unique CNHS number and a QR code that anyone can
+            verify publicly, so the record cannot be forged or edited after the fact.
+          </p>
+        </div>
+      </div>
+
       {/* Certificates Grid */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -99,6 +113,14 @@ export default function StudentCertificatesPage() {
                     </p>
                     <p className="text-[11px] text-muted-foreground/80 mt-2">
                       Conferred: <span className="font-semibold text-foreground">{formatDate(cert.issue_date)}</span>
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/80 mt-0.5">
+                      Signed by:{' '}
+                      <span className="font-semibold text-foreground">
+                        {cert.issuer_first_name
+                          ? `Adviser ${cert.issuer_first_name} ${cert.issuer_last_name || ''}`
+                          : 'CNHS Activity Adviser'}
+                      </span>
                     </p>
                   </div>
                 </div>

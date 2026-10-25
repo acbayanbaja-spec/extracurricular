@@ -46,7 +46,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         });
       } else if (msg.type === 'CERTIFICATE_ISSUED' && user.role === 'STUDENT') {
         toast.success('📜 Official Certificate Conferred!', {
-          description: `You were awarded "${msg.payload?.title || 'Credential'}" by Adviser Javidec Monsion.`,
+          description: `You were awarded "${msg.payload?.title || 'Credential'}" by ${msg.senderName ? `Adviser ${msg.senderName}` : 'your activity adviser'}.`,
         });
       } else if (msg.type === 'ACTIVITY_CREATED' && user.role === 'STUDENT') {
         toast.info('🌟 New Activity Published!', {
@@ -54,7 +54,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         });
       } else if (msg.type === 'BADGE_AWARDED' && user.role === 'STUDENT') {
         toast.success(`🏅 Honor Badge Conferred: ${msg.payload?.badgeName || 'Honor Badge'}!`, {
-          description: `Adviser ${msg.senderName || 'Javidec Monsion'} has conferred the ${msg.payload?.badgeTier || 'Honor'} badge to your portfolio.`,
+          description: `${msg.senderName ? `Adviser ${msg.senderName}` : 'Your activity adviser'} has conferred the ${msg.payload?.badgeTier || 'Honor'} badge to your portfolio.`,
         });
       }
     });

@@ -11,12 +11,20 @@ import {
   QrCode,
   Flame,
   CheckCircle2,
-  XCircle,
+  CalendarClock,
   AlertTriangle,
-  Calendar,
   Sparkles,
+  TrendingUp,
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
+import { realtimeSync } from '@/lib/realtime';
+
+function rateTone(rate: number) {
+  if (rate >= 95) return { label: 'Excellent standing', cls: 'text-emerald-600 dark:text-emerald-400' };
+  if (rate >= 85) return { label: 'Good standing', cls: 'text-primary-600 dark:text-primary-400' };
+  if (rate >= 75) return { label: 'Needs improvement', cls: 'text-amber-600 dark:text-amber-400' };
+  return { label: 'At risk', cls: 'text-rose-600 dark:text-rose-400' };
+}
 
 export default function StudentAttendancePage() {
   const [stats, setStats] = useState<AttendanceStats | null>(null);
@@ -37,7 +45,20 @@ export default function StudentAttendancePage() {
 
   useEffect(() => {
     fetchAttendance();
+    const interval = setInterval(fetchAttendance, 20000);
+    const unsubscribe = realtimeSync.subscribe((msg) => {
+      if (msg.type === 'ATTENDANCE_MARKED' || msg.type === 'ATTENDANCE_CHECKED_IN') {
+        fetchAttendance();
+      }
+    });
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
   }, []);
+
+  const tone = rateTone(stats?.attendanceRate ?? 0);
+  const scheduled = stats?.scheduled ?? history.filter((h: any) => h.status === 'Scheduled').length;
 
   return (
     <div className="space-y-6">
@@ -69,10 +90,10 @@ export default function StudentAttendancePage() {
         <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Attendance %</p>
           <p className="text-3xl font-black text-foreground mt-1">
-            {stats ? `${stats.attendanceRate}%` : '100%'}
+            {(stats?.attendanceRate ?? 0).toFixed(1)}%
           </p>
-          <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1 mt-0.5">
-            <CheckCircle2 className="h-3 w-3" /> Excellent Standing
+          <span className={`text-[11px] font-semibold flex items-center gap-1 mt-0.5 ${tone.cls}`}>
+            <CheckCircle2 className="h-3 w-3" /> {tone.label}
           </span>
         </div>
 
@@ -80,33 +101,36 @@ export default function StudentAttendancePage() {
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Streak</p>
           <p className="text-3xl font-black text-amber-500 mt-1 flex items-center gap-1.5">
             <Flame className="h-6 w-6 fill-amber-500" />
-            {stats ? stats.streakCount : 0}
+            {stats?.streakCount ?? 0}
           </p>
           <span className="text-[11px] text-muted-foreground mt-0.5">Consecutive sessions</span>
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Present</p>
-          <p className="text-3xl font-black text-emerald-600 mt-1">
-            {stats ? stats.present : 0}
-          </p>
-          <span className="text-[11px] text-muted-foreground mt-0.5">Sessions attended</span>
+          <p className="text-3xl font-black text-emerald-600 mt-1">{stats?.present ?? 0}</p>
+          <span className="text-[11px] text-muted-foreground mt-0.5">of {stats?.totalSessions ?? 0} held sessions</span>
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Late</p>
-          <p className="text-3xl font-black text-amber-500 mt-1">
-            {stats ? stats.late : 0}
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Late / Absent</p>
+          <p className="text-3xl font-black text-foreground mt-1">
+            <span className="text-amber-500">{stats?.late ?? 0}</span>
+            <span className="text-muted-foreground mx-1">/</span>
+            <span className="text-rose-600">{stats?.absent ?? 0}</span>
           </p>
-          <span className="text-[11px] text-muted-foreground mt-0.5">Checked in with delay</span>
+          <span className="text-[11px] text-muted-foreground mt-0.5">Needs adviser attention</span>
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Absent</p>
-          <p className="text-3xl font-black text-rose-600 mt-1">
-            {stats ? stats.absent : 0}
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Growth Points</p>
+          <p className="text-3xl font-black text-primary-600 mt-1 flex items-center gap-1">
+            <TrendingUp className="h-5 w-5" />
+            {stats?.totalPoints ?? 0}
           </p>
-          <span className="text-[11px] text-muted-foreground mt-0.5">Missed sessions</span>
+          <span className="text-[11px] text-muted-foreground mt-0.5">
+            {scheduled > 0 ? `${scheduled} upcoming session${scheduled > 1 ? 's' : ''}` : 'No upcoming sessions'}
+          </span>
         </div>
       </div>
 
@@ -124,8 +148,13 @@ export default function StudentAttendancePage() {
         {isLoading ? (
           <div className="p-8 text-center text-xs text-muted-foreground">Loading attendance log...</div>
         ) : history.length === 0 ? (
-          <div className="p-12 text-center text-xs text-muted-foreground">
-            No attendance sessions recorded yet. Scan a session QR code or attend an activity to begin!
+          <div className="p-12 text-center">
+            <CalendarClock className="h-9 w-9 text-muted-foreground/60 mx-auto mb-2" />
+            <p className="text-sm font-bold text-foreground">No sessions yet</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+              Once your adviser opens a session for an activity you are enrolled in, it appears here.
+              Scan the live QR code on the day to record your attendance.
+            </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -169,12 +198,21 @@ export default function StudentAttendancePage() {
                       </Badge>
                     </td>
                     <td className="py-3.5 px-4 uppercase text-[10px] font-bold text-muted-foreground">
-                      {record.check_in_method === 'qr_scan' ? (
+                      {record.status === 'Scheduled' ? (
+                        <button
+                          onClick={() => setIsQrModalOpen(true)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 px-2.5 py-1 text-[10px] font-bold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors normal-case"
+                        >
+                          <QrCode className="h-3 w-3" /> Scan when open
+                        </button>
+                      ) : record.check_in_method === 'qr_scan' ? (
                         <span className="flex items-center gap-1 text-primary-600 font-bold">
                           <QrCode className="h-3 w-3" /> QR Scan
                         </span>
                       ) : (
-                        'Manual'
+                        <span className="flex items-center gap-1">
+                          <Sparkles className="h-3 w-3" /> Adviser record
+                        </span>
                       )}
                     </td>
                     <td className="py-3.5 px-4 text-muted-foreground">

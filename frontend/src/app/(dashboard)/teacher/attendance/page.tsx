@@ -18,8 +18,10 @@ import {
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { realtimeSync } from '@/lib/realtime';
+import { useAuth } from '@/context/AuthContext';
 
 export default function TeacherAttendancePage() {
+  const { user } = useAuth();
   const [activities, setActivities] = useState<Activity[]>([]);
   const [selectedActivityId, setSelectedActivityId] = useState<string>('');
   const [sessions, setSessions] = useState<AttendanceSession[]>([]);
@@ -111,7 +113,7 @@ export default function TeacherAttendancePage() {
       });
       toast.success(`Marked as ${status}`);
 
-      realtimeSync.broadcast('ATTENDANCE_MARKED', { studentId, status, activityId: selectedActivityId }, 'Javidec Monsion', 'TEACHER');
+      realtimeSync.broadcast('ATTENDANCE_MARKED', { studentId, status, activityId: selectedActivityId }, user ? `${user.firstName} ${user.lastName}`.trim() : 'Activity Adviser', 'TEACHER');
 
       // Optimistic update in table
       if (sessionData && sessionData.records) {
