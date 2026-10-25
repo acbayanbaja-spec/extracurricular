@@ -155,6 +155,7 @@ CREATE TABLE IF NOT EXISTS attendance_records (
     check_in_time TIMESTAMP WITH TIME ZONE,
     check_in_method VARCHAR(32) DEFAULT 'manual' CHECK (check_in_method IN ('manual', 'qr_scan')),
     notes TEXT,
+    points_credited BOOLEAN NOT NULL DEFAULT FALSE,
     recorded_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

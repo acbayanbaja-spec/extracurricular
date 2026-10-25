@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { ApiClient } from '@/lib/api';
 import { Activity, AttendanceSession } from '@/types';
 import { Button } from '@/components/ui/Button';
@@ -14,6 +15,8 @@ import {
   Clock,
   AlertCircle,
   FileCheck,
+  ExternalLink,
+  ShieldAlert,
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -205,11 +208,42 @@ export default function TeacherAttendancePage() {
           )}
         </div>
 
+        {(() => {
+          const onHold = (sessionData?.records || []).filter(
+            (r: any) => r.enrolment_status && !['Approved', 'Completed'].includes(r.enrolment_status)
+          );
+          if (onHold.length === 0) return null;
+          const scanned = onHold.filter((r: any) => r.status === 'Present' || r.status === 'Late');
+          return (
+            <div className="px-4 sm:px-5 py-3 border-b border-border bg-amber-50/70 dark:bg-amber-950/20 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-amber-900 dark:text-amber-200">
+              <ShieldAlert className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="font-bold">{onHold.length} learner(s) registered but not approved yet.</span>
+              {scanned.length > 0 && (
+                <span>
+                  {scanned.length} of {scanned.length === 1 ? 'them' : 'them'} already checked in — approve the
+                  registration to bank their growth points.
+                </span>
+              )}
+              <Link href="/teacher/registrations" className="font-bold underline underline-offset-2">
+                Review now
+              </Link>
+            </div>
+          );
+        })()}
+
         {isLoading ? (
           <div className="p-8 text-center text-xs text-muted-foreground">Loading session roster...</div>
         ) : !sessionData || !sessionData.records || sessionData.records.length === 0 ? (
-          <div className="p-12 text-center text-xs text-muted-foreground">
-            No approved students in this activity session.
+          <div className="p-12 text-center space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Nobody has registered for this activity yet, so there is no roster to check in.
+            </p>
+            <Link
+              href="/teacher/registrations"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-input px-3 py-1.5 text-[11px] font-bold text-foreground hover:bg-muted/60"
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> Review registrations
+            </Link>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -229,6 +263,12 @@ export default function TeacherAttendancePage() {
                     <td className="py-3.5 px-4 font-bold text-foreground">
                       <p>{r.first_name} {r.last_name}</p>
                       <p className="text-[11px] font-normal text-muted-foreground">{r.email}</p>
+                      {r.enrolment_status && r.enrolment_status !== 'Approved' && r.enrolment_status !== 'Completed' && (
+                        <Badge variant={r.enrolment_status === 'Pending' ? 'warning' : 'destructive'} className="mt-1.5 text-[9px]">
+                          <ShieldAlert className="mr-1 h-2.5 w-2.5" />
+                          {r.enrolment_status} — points on hold
+                        </Badge>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-muted-foreground">
                       <p className="font-semibold text-foreground">{r.grade_level} - {r.section}</p>

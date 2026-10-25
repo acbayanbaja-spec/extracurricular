@@ -182,6 +182,8 @@ export interface AttendanceRecord {
   status: 'Present' | 'Absent' | 'Late' | 'Excused' | 'Scheduled';
   check_in_time?: string | null;
   check_in_method?: string;
+  // Adviser approval state of the underlying registration, when the row is roster-derived
+  enrolment_status?: string;
   notes?: string | null;
   session_title?: string;
   session_date?: string;

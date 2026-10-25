@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { Html5Qrcode } from 'html5-qrcode';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
@@ -36,7 +37,7 @@ type ScannerPhase = 'idle' | 'starting' | 'scanning' | 'verifying' | 'success' |
 interface ScanFailure {
   title: string;
   hint: string;
-  kind: 'permission' | 'hardware' | 'insecure' | 'busy' | 'rejected' | 'generic';
+  kind: 'permission' | 'hardware' | 'insecure' | 'busy' | 'rejected' | 'enrolment' | 'generic';
 }
 
 interface ScanResponse {
@@ -44,6 +45,7 @@ interface ScanResponse {
   status?: string;
   pointsAwarded?: number;
   alreadyPresent?: boolean;
+  enrolmentStatus?: string;
   activityTitle?: string;
   sessionTitle?: string;
   checkInTime?: string;
@@ -144,6 +146,7 @@ export function QrScannerModal({ isOpen, onClose, onSuccess }: QrScannerModalPro
   const [mode, setMode] = useState<ScanMode>('camera');
   const [phase, setPhase] = useState<ScannerPhase>('idle');
   const [failure, setFailure] = useState<ScanFailure | null>(null);
+  const [lastResult, setLastResult] = useState<ScanResponse | null>(null);
   const [manualCode, setManualCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cameras, setCameras] = useState<{ id: string; label: string }[]>([]);
@@ -183,10 +186,14 @@ export function QrScannerModal({ isOpen, onClose, onSuccess }: QrScannerModalPro
       try {
         const { sessionId, token } = parseQrPayload(text);
         const res = await ApiClient.post<ScanResponse>('/attendance/qr/scan', { sessionId, token });
+        setLastResult(res || null);
         setPhase('success');
+        const pointsOnHold = !!res?.enrolmentStatus && !['Approved', 'Completed'].includes(res.enrolmentStatus);
         toast.success(res?.alreadyPresent ? 'You are already checked in' : 'Attendance recorded!', {
           description: res?.activityTitle
-            ? `${res.activityTitle} • ${res.status || 'Present'}${res.pointsAwarded ? ` • +${res.pointsAwarded} growth points` : ''}`
+            ? `${res.activityTitle} • ${res.status || 'Present'}${
+                res.pointsAwarded ? ` • +${res.pointsAwarded} growth points` : pointsOnHold ? ' • points held for approval' : ''
+              }`
             : res?.message || 'Your check-in was verified by the adviser’s session code.',
         });
         realtimeSync.broadcast(
@@ -199,12 +206,15 @@ export function QrScannerModal({ isOpen, onClose, onSuccess }: QrScannerModalPro
         window.setTimeout(() => onClose(), 1300);
       } catch (err: any) {
         const message = err?.message || 'The session code was not recognised.';
+        const isEnrolment = /not enrolled|registration/i.test(message);
         setPhase('error');
         setFailure({
-          kind: 'rejected',
-          title: 'Check-in was not accepted',
+          kind: isEnrolment ? 'enrolment' : 'rejected',
+          title: isEnrolment ? 'You are not on this activity’s roster' : 'Check-in was not accepted',
           hint: /waking up|fetch/i.test(message)
             ? 'The school server is waking up. Try again in a few seconds.'
+            : isEnrolment
+            ? 'Register for the activity first — your adviser can also add you directly. Open My Activities to check your pending applications.'
             : `${message} Ask your adviser to refresh the live QR, or enter the session token shown under it.`,
         });
         toast.error('Check-in failed', { description: message });
@@ -297,6 +307,7 @@ export function QrScannerModal({ isOpen, onClose, onSuccess }: QrScannerModalPro
       void stopCamera();
       setPhase('idle');
       setFailure(null);
+      setLastResult(null);
       setMode('camera');
       setManualCode('');
       lockRef.current = false;
@@ -475,10 +486,19 @@ export function QrScannerModal({ isOpen, onClose, onSuccess }: QrScannerModalPro
                     </>
                   )}
 
-                  {failure && (
+                  {failure && failure.kind !== 'enrolment' && (
                     <Button size="sm" onClick={() => void startCamera()} className="mt-1 font-bold">
                       <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Start camera
                     </Button>
+                  )}
+                  {failure && failure.kind === 'enrolment' && (
+                    <Link
+                      href="/student/my-activities"
+                      onClick={onClose}
+                      className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-slate-500/50 px-3.5 py-1.5 text-[11px] font-bold text-white hover:bg-white/10"
+                    >
+                      Open My Activities
+                    </Link>
                   )}
                 </div>
               )}
@@ -488,7 +508,11 @@ export function QrScannerModal({ isOpen, onClose, onSuccess }: QrScannerModalPro
                 <div className="cnhs-qr-pop absolute inset-0 flex flex-col items-center justify-center gap-2 bg-emerald-600/95 text-white">
                   <CheckCircle2 className="h-14 w-14" />
                   <p className="text-base font-black tracking-tight">Checked in!</p>
-                  <p className="text-[11px] font-semibold text-emerald-100">Attendance verified with your adviser</p>
+                  <p className="max-w-xs px-4 text-[11px] font-semibold leading-relaxed text-emerald-100">
+                    {lastResult?.activityTitle
+                      ? `${lastResult.activityTitle} • ${lastResult.pointsAwarded ? `+${lastResult.pointsAwarded} growth points` : 'points post when your adviser approves your registration'}`
+                      : 'Attendance verified with your adviser'}
+                  </p>
                 </div>
               )}
             </div>

@@ -177,6 +177,11 @@ export default function StudentAttendancePage() {
                       <p className="text-[11px] font-normal text-muted-foreground">
                         {record.session_title}
                       </p>
+                      {record.enrolment_status && !['Approved', 'Completed'].includes(record.enrolment_status) && (
+                        <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-400">
+                          Attendance saved • registration {record.enrolment_status.toLowerCase()}
+                        </p>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 text-muted-foreground">
                       <p className="font-medium text-foreground">{formatDate(record.session_date || '')}</p>

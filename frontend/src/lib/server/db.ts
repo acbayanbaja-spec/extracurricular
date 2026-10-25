@@ -13,6 +13,7 @@ declare global {
   var _cnhsPgPool: Pool | undefined;
   var _cnhsInMemoryStore: any | undefined;
   var _cnhsSchemaReady: Promise<void> | undefined;
+  var _cnhsSchemaReadySig: string | undefined;
 }
 
 if (!global._cnhsPgPool) {
@@ -43,10 +44,14 @@ const LIVE_SCHEMA_PATCHES: string[] = [
   `ALTER TABLE registrations ADD COLUMN IF NOT EXISTS motivation TEXT`,
   `ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check`,
   `ALTER TABLE notifications ADD CONSTRAINT notifications_type_check CHECK (type IN ('registration', 'attendance', 'achievement', 'badge', 'certificate', 'announcement', 'system', 'info', 'success', 'warning'))`,
+  `ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS points_credited BOOLEAN DEFAULT FALSE`,
 ];
 
 export function ensureLiveSchema(): Promise<void> {
-  if (!global._cnhsSchemaReady) {
+  // Long-lived dev/serverless processes keep `global` warm, so re-run whenever the patch list grows
+  const signature = String(LIVE_SCHEMA_PATCHES.length);
+  if (global._cnhsSchemaReadySig !== signature) {
+    global._cnhsSchemaReadySig = signature;
     global._cnhsSchemaReady = (async () => {
       if (!pool) return;
       for (const sql of LIVE_SCHEMA_PATCHES) {
@@ -58,7 +63,7 @@ export function ensureLiveSchema(): Promise<void> {
       }
     })();
   }
-  return global._cnhsSchemaReady;
+  return global._cnhsSchemaReady ?? Promise.resolve();
 }
 
 // Resilient In-Memory Fallback Seed Store
@@ -253,6 +258,7 @@ function initFallbackStore() {
       check_in_time: '2026-10-15T08:14:22.000Z',
       check_in_method: 'qr_scan',
       notes: 'Verified via dynamic QR code check-in',
+      points_credited: true,
     },
   ];
 
@@ -505,6 +511,17 @@ export const serverDb = {
     }
 
     if (lower.includes('from attendance_records')) {
+      if (lower.includes('count(') && lower.includes('points_credited')) {
+        const [studentId, activityId] = params;
+        const cnt = store.attendance_records.filter(
+          (r: any) =>
+            r.student_id === studentId &&
+            r.activity_id === activityId &&
+            ['Present', 'Late'].includes(r.status) &&
+            !r.points_credited
+        ).length;
+        return [{ cnt }] as T[];
+      }
       if (lower.includes('session_id = ? and student_id = ?')) {
         const [sessionId, studentId] = params;
         return store.attendance_records.filter(
@@ -521,10 +538,43 @@ export const serverDb = {
     }
 
     if (lower.includes('from registrations')) {
+      // Adviser session roster: every registered learner plus their attendance for one session
+      if (lower.includes('left join attendance_records') && lower.includes('r.activity_id = ?')) {
+        const [sessionId, activityId] = params;
+        return store.registrations
+          .filter((r: any) => r.activity_id === activityId)
+          .map((r: any) => {
+            const student: any = store.students.find((s: any) => s.id === r.student_id) || {};
+            const user: any = store.users.find((u: any) => u.id === student.user_id) || {};
+            const rec: any = store.attendance_records.find(
+              (ar: any) => ar.session_id === sessionId && ar.student_id === r.student_id
+            ) || {};
+            return {
+              student_id: student.id,
+              student_id_number: student.student_id_number,
+              grade_level: student.grade_level,
+              section: student.section,
+              track_strand: student.track_strand,
+              first_name: user.first_name,
+              last_name: user.last_name,
+              email: user.email,
+              avatar_url: user.avatar_url || null,
+              enrolment_status: r.status,
+              registration_id: r.id,
+              record_id: rec.id || null,
+              status: rec.status || 'Absent',
+              check_in_time: rec.check_in_time || null,
+              check_in_method: rec.check_in_method || null,
+              notes: rec.notes || null,
+            };
+          }) as T[];
+      }
+
+      // Learner attendance ledger: approved enrolments plus any session they actually attended
       if (lower.includes('left join attendance_records')) {
         const studentId = params[0];
         return store.registrations
-          .filter((r: any) => r.student_id === studentId && (r.status === 'Approved' || r.status === 'Completed'))
+          .filter((r: any) => r.student_id === studentId)
           .flatMap((r: any) =>
             store.sessions
               .filter((s: any) => s.activity_id === r.activity_id)
@@ -532,6 +582,8 @@ export const serverDb = {
                 const rec: any = store.attendance_records.find(
                   (ar: any) => ar.session_id === s.id && ar.student_id === studentId
                 ) || {};
+                const approved = r.status === 'Approved' || r.status === 'Completed';
+                if (!approved && !rec.id) return null;
                 const act: any = store.activities.find((a: any) => a.id === s.activity_id) || {};
                 const cat: any = store.categories.find((c: any) => c.id === act.category_id) || {};
                 return {
@@ -545,12 +597,14 @@ export const serverDb = {
                   activity_id: act.id,
                   category_name: cat.name || 'General',
                   category_color: cat.color || '#4F46E5',
+                  enrolment_status: r.status,
                   status: rec.status || null,
                   check_in_time: rec.check_in_time || null,
                   check_in_method: rec.check_in_method || null,
                   notes: rec.notes || null,
                 };
               })
+              .filter(Boolean)
           ) as T[];
       }
 
@@ -865,17 +919,30 @@ export const serverDb = {
         check_in_time: params[5],
         check_in_method: params[6],
         notes: params[7],
+        points_credited: params[8] ?? false,
       });
       return { changes: 1 };
     }
 
     if (lower.startsWith('update attendance_records')) {
+      // Bulk credit of a learner's held check-ins for one activity
+      if (lower.includes('points_credited = true') && lower.includes('where student_id = ? and activity_id = ?')) {
+        const [studentId, activityId] = params;
+        store.attendance_records.forEach((r: any) => {
+          if (r.student_id === studentId && r.activity_id === activityId && !r.points_credited) {
+            r.points_credited = true;
+          }
+        });
+        return { changes: 1 };
+      }
+
       const recordId = params[params.length - 1];
       const record = store.attendance_records.find((r: any) => r.id === recordId);
       if (record) {
         record.status = params[0];
         record.check_in_time = params[1] || record.check_in_time;
         if (params.length >= 4) record.notes = params[2];
+        if (params.length >= 5) record.points_credited = params[3];
       }
       return { changes: 1 };
     }

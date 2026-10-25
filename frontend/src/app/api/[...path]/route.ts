@@ -424,6 +424,11 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
         [studentId]
       );
 
+      // Only the seeded demo learner may render without a row; any other id must 404
+      // so a real student can never be shown someone else's name, LRN or record.
+      if (!student && studentId !== 'std-01') {
+        return NextResponse.json({ success: false, message: 'Portfolio not found' }, { status: 404 });
+      }
       if (!student) {
         student = {
           id: studentId,
@@ -455,7 +460,7 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
       );
 
       const history = await serverDb.query(
-        `SELECT ar.*, a.title as activity_title, a.date, a.points_value
+        `SELECT ar.*, a.title as activity_title, a.date, a.points as points_value
          FROM attendance_records ar
          JOIN activities a ON ar.activity_id = a.id
          WHERE ar.student_id = ?
@@ -690,14 +695,9 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
         `);
 
         let csv = 'Record ID,Activity,Session Title,Session Date,Student Name,LRN,Grade,Section,Status,Check In Time,Method,Notes\r\n';
-        if (records.length === 0) {
-          // Provide sample row if table is empty
-          csv += '"REC-001","Annual Youth Leadership Summit","Day 1: Procedures","2026-10-14","Nicole Maquilan","109823450012","Grade 11","STEM Diamond","Present","2026-10-14 08:15:00","qr_scan","Verified check-in"\r\n';
-        } else {
-          records.forEach((r: any) => {
-            csv += `"${r.id}","${r.activity_title}","${r.session_title}","${r.session_date}","${r.student_name}","${r.student_id_number}","${r.grade_level}","${r.section}","${r.status}","${r.check_in_time || ''}","${r.check_in_method || ''}","${r.notes || ''}"\r\n`;
-          });
-        }
+        records.forEach((r: any) => {
+          csv += `"${r.id}","${r.activity_title}","${r.session_title}","${r.session_date}","${r.student_name}","${r.student_id_number}","${r.grade_level}","${r.section}","${r.status}","${r.check_in_time || ''}","${r.check_in_method || ''}","${r.notes || ''}"\r\n`;
+        });
 
         return new NextResponse(csv, {
           status: 200,
@@ -721,13 +721,9 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
         `);
 
         let csv = 'Registration ID,Activity,Activity Date,Student Name,LRN,Grade,Section,Status,Registered At,Notes\r\n';
-        if (records.length === 0) {
-          csv += '"REG-001","Annual Youth Leadership Summit","2026-10-14","Nicole Maquilan","109823450012","Grade 11","STEM Diamond","Approved","2026-10-12 10:00:00","Adviser approved"\r\n';
-        } else {
-          records.forEach((r: any) => {
-            csv += `"${r.id}","${r.activity_title}","${r.activity_date}","${r.student_name}","${r.student_id_number}","${r.grade_level}","${r.section}","${r.status}","${r.registration_date}","${r.review_notes || ''}"\r\n`;
-          });
-        }
+        records.forEach((r: any) => {
+          csv += `"${r.id}","${r.activity_title}","${r.activity_date}","${r.student_name}","${r.student_id_number}","${r.grade_level}","${r.section}","${r.status}","${r.registration_date}","${r.review_notes || ''}"\r\n`;
+        });
 
         return new NextResponse(csv, {
           status: 200,
@@ -821,38 +817,22 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
         [sessionId]
       );
 
-      // Query registered students
+      // Query registered students — every learner on the roster, whatever their approval state
       let records: any[] = [];
       if (session) {
         records = await serverDb.query(
           `SELECT s.id as student_id, s.student_id_number, s.grade_level, s.section, s.track_strand,
                   u.first_name, u.last_name, u.email, u.avatar_url,
+                  r.status as enrolment_status, r.id as registration_id,
                   ar.id as record_id, COALESCE(ar.status, 'Absent') as status, ar.check_in_time, ar.check_in_method, ar.notes
            FROM registrations r
            JOIN students s ON r.student_id = s.id
            JOIN users u ON s.user_id = u.id
            LEFT JOIN attendance_records ar ON ar.session_id = ? AND ar.student_id = s.id
-           WHERE r.activity_id = ? AND r.status IN ('Approved', 'Completed')
-           ORDER BY u.last_name ASC`,
+           WHERE r.activity_id = ?
+           ORDER BY (r.status IN ('Approved', 'Completed')) DESC, u.last_name ASC`,
           [sessionId, session.activity_id]
         );
-      }
-
-      // If no approved records found, include default student Nicole Maquilan
-      if (records.length === 0) {
-        records = [{
-          student_id: 'std-01',
-          student_id_number: '109823450012',
-          grade_level: 'Grade 11',
-          section: 'STEM Diamond',
-          track_strand: 'STEM Varsity Delegate',
-          first_name: 'Nicole',
-          last_name: 'Maquilan',
-          email: 'student@cnhs.edu.ph',
-          status: 'Present',
-          check_in_time: new Date().toISOString(),
-          check_in_method: 'qr_scan',
-        }];
       }
 
       return NextResponse.json({
@@ -877,13 +857,15 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
                 s.session_title, s.session_date, s.start_time, s.end_time,
                 a.title as activity_title, a.id as activity_id,
                 c.name as category_name, c.color as category_color,
+                r.status as enrolment_status,
                 ar.status, ar.check_in_time, ar.check_in_method, ar.notes
          FROM registrations r
          JOIN attendance_sessions s ON s.activity_id = r.activity_id
          JOIN activities a ON a.id = s.activity_id
          LEFT JOIN categories c ON a.category_id = c.id
          LEFT JOIN attendance_records ar ON ar.session_id = s.id AND ar.student_id = r.student_id
-         WHERE r.student_id = ? AND r.status IN ('Approved', 'Completed')
+         WHERE r.student_id = ?
+           AND (r.status IN ('Approved', 'Completed') OR ar.id IS NOT NULL)
          ORDER BY s.session_date DESC`,
         [studentId]
       );
@@ -1392,7 +1374,7 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       }
 
       const enrolment = await serverDb.get(
-        'SELECT status FROM registrations WHERE activity_id = ? AND student_id = ?',
+        'SELECT id, status FROM registrations WHERE activity_id = ? AND student_id = ?',
         [session.activity_id, studentId]
       );
       if (!enrolment) {
@@ -1401,18 +1383,14 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
           { status: 403 }
         );
       }
-      if (!['Approved', 'Completed'].includes(enrolment.status)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: `Your registration is ${String(enrolment.status).toLowerCase()} — an adviser must approve it before you can check in.`,
-          },
-          { status: 403 }
-        );
-      }
+
+      // Presence is always recorded for anyone on the adviser's roster; growth points
+      // follow approval so a learner cannot bank credit before their adviser signs off.
+      const enrolmentStatus = String(enrolment.status || 'Pending');
+      const isCredited = ['Approved', 'Completed'].includes(enrolmentStatus);
 
       const activity = await serverDb.get('SELECT * FROM activities WHERE id = ?', [session.activity_id]);
-      const earnedPoints = Number(activity?.points ?? activity?.points_value ?? 25) || 25;
+      const earnedPoints = isCredited ? Number(activity?.points ?? activity?.points_value ?? 25) || 25 : 0;
       const nowIso = new Date().toISOString();
 
       const existing = await serverDb.get(
@@ -1431,6 +1409,7 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
             status: 'Present',
             alreadyPresent: true,
             pointsAwarded: 0,
+            enrolmentStatus,
             sessionTitle: session.session_title,
             activityTitle: activity?.title || 'Extracurricular Activity',
           },
@@ -1438,21 +1417,23 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       }
 
       const recordId = existing ? existing.id : `rec-${Date.now()}`;
-      const checkInNote = 'Verified via dynamic QR code check-in';
+      const checkInNote = isCredited
+        ? 'Verified via dynamic QR code check-in'
+        : `Verified via QR check-in while registration is ${enrolmentStatus.toLowerCase()}`;
 
       if (existing) {
         await serverDb.run(
           `UPDATE attendance_records 
-           SET status = ?, check_in_time = ?, check_in_method = 'qr_scan', notes = ?
+           SET status = ?, check_in_time = ?, check_in_method = 'qr_scan', notes = ?, points_credited = ?
            WHERE id = ?`,
-          ['Present', nowIso, checkInNote, recordId]
+          ['Present', nowIso, checkInNote, isCredited, recordId]
         );
       } else {
         await serverDb.run(
           `INSERT INTO attendance_records 
-           (id, session_id, activity_id, student_id, status, check_in_time, check_in_method, notes)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [recordId, session.id, session.activity_id, studentId, 'Present', nowIso, 'qr_scan', checkInNote]
+           (id, session_id, activity_id, student_id, status, check_in_time, check_in_method, notes, points_credited)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [recordId, session.id, session.activity_id, studentId, 'Present', nowIso, 'qr_scan', checkInNote, isCredited]
         );
       }
 
@@ -1467,11 +1448,14 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
 
       const learner = await serverDb.get('SELECT first_name, last_name FROM users WHERE id = ?', [authUser.userId]);
       const learnerName = learner ? `${learner.first_name} ${learner.last_name}`.trim() : 'A learner';
+      const activityLabel = activity?.title || 'the session';
 
       await createNotification(
         authUser.userId,
         'Attendance verified ✅',
-        `You checked in to ${activity?.title || 'the session'} (${session.session_title}). +${earnedPoints} growth points awarded.`,
+        isCredited
+          ? `You checked in to ${activityLabel} (${session.session_title}). +${earnedPoints} growth points awarded.`
+          : `You checked in to ${activityLabel} (${session.session_title}). Your registration is ${enrolmentStatus.toLowerCase()}, so growth points post once your adviser approves it.`,
         'attendance',
         '/student/attendance'
       );
@@ -1479,8 +1463,10 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       if (session.created_by && session.created_by !== authUser.userId) {
         await createNotification(
           session.created_by,
-          'Learner checked in by QR',
-          `${learnerName} scanned your session QR for "${session.session_title}".`,
+          isCredited ? 'Learner checked in by QR' : `Review: ${enrolmentStatus} learner checked in`,
+          isCredited
+            ? `${learnerName} scanned your session QR for "${session.session_title}".`
+            : `${learnerName} scanned the QR for "${session.session_title}" but their registration is ${enrolmentStatus.toLowerCase()}. Approve it to bank their points, or correct the record.`,
           'attendance',
           '/teacher/attendance'
         );
@@ -1488,7 +1474,9 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
 
       return NextResponse.json({
         success: true,
-        message: `Checked in successfully. +${earnedPoints} growth points awarded.`,
+        message: isCredited
+          ? `Checked in successfully. +${earnedPoints} growth points awarded.`
+          : `Checked in. Points post once your adviser approves your ${enrolmentStatus.toLowerCase()} registration.`,
         data: {
           recordId,
           studentId,
@@ -1496,6 +1484,7 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
           status: 'Present',
           alreadyPresent: false,
           pointsAwarded: earnedPoints,
+          enrolmentStatus,
           sessionTitle: session.session_title,
           activityTitle: activity?.title || 'Extracurricular Activity',
         },
@@ -1954,6 +1943,35 @@ export async function PUT(request: NextRequest, { params }: { params: { path: st
           'UPDATE activities SET current_participants = current_participants + 1 WHERE id = ?',
           [regInfo.activity_id]
         );
+
+        // Credit any check-ins the learner made while their registration was still pending
+        const held = await serverDb.get(
+          `SELECT COUNT(*) as cnt FROM attendance_records
+           WHERE student_id = ? AND activity_id = ?
+             AND status IN ('Present', 'Late')
+             AND COALESCE(points_credited, FALSE) = FALSE`,
+          [regInfo.student_id, regInfo.activity_id]
+        );
+        const heldCount = Number(held?.cnt || 0);
+        if (heldCount > 0) {
+          const act = await serverDb.get('SELECT points FROM activities WHERE id = ?', [regInfo.activity_id]);
+          const perCheckIn = Number(act?.points ?? 25) || 25;
+          const credited = perCheckIn * heldCount;
+          await serverDb.run(
+            'UPDATE attendance_records SET points_credited = TRUE WHERE student_id = ? AND activity_id = ? AND status IN (\'Present\', \'Late\') AND COALESCE(points_credited, FALSE) = FALSE',
+            [regInfo.student_id, regInfo.activity_id]
+          );
+          await serverDb.run('UPDATE students SET total_points = total_points + ? WHERE id = ?', [credited, regInfo.student_id]);
+          if (regInfo.user_id) {
+            await createNotification(
+              regInfo.user_id,
+              'Held attendance credited! 🎯',
+              `${heldCount} check-in${heldCount > 1 ? 's' : ''} you made before approval now count: +${credited} growth points for "${regInfo.activity_title || 'your activity'}".`,
+              'attendance',
+              '/student/attendance'
+            );
+          }
+        }
       }
 
       // Notify the actual student
