@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { ApiClient } from '@/lib/api';
 import { RecommendedActivity } from '@/types';
 import { ActivityCard } from '@/components/activities/ActivityCard';
+import { RegistrationFormModal } from '@/components/activities/RegistrationFormModal';
 import { Button } from '@/components/ui/Button';
 import { Sparkles, CheckCircle2, Award, Info } from 'lucide-react';
 import { toast } from 'sonner';
@@ -11,7 +12,7 @@ import { toast } from 'sonner';
 export default function RecommendedActivitiesPage() {
   const [recommendations, setRecommendations] = useState<RecommendedActivity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [registeringId, setRegisteringId] = useState<string | null>(null);
+  const [registrationTarget, setRegistrationTarget] = useState<RecommendedActivity | null>(null);
 
   const fetchRecommendations = () => {
     setIsLoading(true);
@@ -27,19 +28,9 @@ export default function RecommendedActivitiesPage() {
     fetchRecommendations();
   }, []);
 
-  const handleRegister = async (activityId: string) => {
-    setRegisteringId(activityId);
-    try {
-      await ApiClient.post('/registrations/register', { activityId });
-      toast.success('Registration Submitted!', {
-        description: 'Your request has been forwarded to the adviser.',
-      });
-      fetchRecommendations();
-    } catch (err: any) {
-      toast.error('Registration Failed', { description: err.message });
-    } finally {
-      setRegisteringId(null);
-    }
+  const handleRegister = (activityId: string) => {
+    const rec = recommendations.find((r) => r.id === activityId);
+    if (rec) setRegistrationTarget(rec);
   };
 
   return (
@@ -113,13 +104,20 @@ export default function RecommendedActivitiesPage() {
                 <ActivityCard
                   activity={rec}
                   onRegister={handleRegister}
-                  isRegistering={registeringId === rec.id}
+                  isRegistering={false}
                 />
               </div>
             </div>
           ))}
         </div>
       )}
+
+      <RegistrationFormModal
+        isOpen={!!registrationTarget}
+        activity={registrationTarget}
+        onClose={() => setRegistrationTarget(null)}
+        onRegistered={fetchRecommendations}
+      />
     </div>
   );
 }

@@ -209,7 +209,19 @@ export default function RegisterPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-foreground mb-1">Guardian Contact Phone</label>
+                <label className="block text-xs font-bold text-foreground mb-1">Guardian Full Name *</label>
+                <input
+                  type="text"
+                  name="guardianName"
+                  value={formData.guardianName}
+                  onChange={handleChange}
+                  placeholder="e.g. Maria Santos"
+                  className="w-full rounded-xl border border-input bg-background px-3.5 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-foreground mb-1">Guardian Contact Phone *</label>
                 <input
                   type="text"
                   name="guardianPhone"
@@ -217,6 +229,7 @@ export default function RegisterPage() {
                   onChange={handleChange}
                   placeholder="+63 9XX XXX XXXX"
                   className="w-full rounded-xl border border-input bg-background px-3.5 py-2 text-xs text-foreground focus:ring-2 focus:ring-primary-500"
+                  required
                 />
               </div>
             </div>

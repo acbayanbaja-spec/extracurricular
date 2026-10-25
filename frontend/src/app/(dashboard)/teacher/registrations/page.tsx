@@ -6,7 +6,7 @@ import { Registration, Activity } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Modal } from '@/components/ui/Modal';
-import { ClipboardCheck, CheckCircle2, XCircle, Search, Filter } from 'lucide-react';
+import { ClipboardCheck, CheckCircle2, XCircle, Search, Filter, User, Users2, MapPin, Phone, HeartPulse, Sparkles, ShieldCheck } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { realtimeSync } from '@/lib/realtime';
@@ -200,7 +200,7 @@ export default function TeacherRegistrationsPage() {
                         variant="outline"
                         onClick={() => {
                           setActiveReg(reg);
-                          setReviewStatus(reg.status === 'Approved' ? 'Approved' : 'Approved');
+                          setReviewStatus('Approved');
                           setReviewNotes(reg.review_notes || '');
                         }}
                         className="text-xs h-8"
@@ -220,9 +220,79 @@ export default function TeacherRegistrationsPage() {
       <Modal
         isOpen={!!activeReg}
         onClose={() => setActiveReg(null)}
+        maxWidth="2xl"
         title="Review Student Registration"
         description={`Applicant: ${activeReg?.first_name} ${activeReg?.last_name} (${activeReg?.grade_level})`}
       >
+        {/* Applicant Declaration Details */}
+        {activeReg && (
+          <div className="space-y-4 mb-5 rounded-2xl border border-border/80 bg-muted/40 p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+              <div>
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  <User className="h-3 w-3" /> Learner
+                </p>
+                <p className="text-xs font-bold text-foreground">{activeReg.participant_name || `${activeReg.first_name} ${activeReg.last_name}`}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {activeReg.grade_level} - {activeReg.section} • LRN <span className="font-mono">{activeReg.student_id_number || activeReg.lrn}</span>
+                </p>
+                <p className="text-[11px] text-muted-foreground">{activeReg.email}</p>
+              </div>
+
+              <div>
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  <Phone className="h-3 w-3" /> Contact & Address
+                </p>
+                <p className="text-[11px] text-foreground font-medium">{activeReg.contact_number || 'Not provided'}</p>
+                <p className="text-[11px] text-muted-foreground flex items-start gap-1">
+                  <MapPin className="h-3 w-3 mt-0.5 shrink-0 text-rose-500" />
+                  {activeReg.address || 'Not provided'}
+                </p>
+              </div>
+
+              <div>
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  <Users2 className="h-3 w-3" /> Parent / Guardian
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-[11px] font-bold text-foreground">{activeReg.guardian_name || activeReg.student_guardian_name || 'Not provided'}</p>
+                  {activeReg.guardian_relationship && (
+                    <span className="rounded-full bg-primary-600/10 text-primary-700 dark:text-primary-400 px-1.5 py-0.25 text-[9px] font-bold">
+                      {activeReg.guardian_relationship}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {activeReg.guardian_contact || activeReg.student_guardian_phone || 'No contact number'}
+                </p>
+                {activeReg.guardian_consent ? (
+                  <p className="flex items-center gap-1 text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                    <ShieldCheck className="h-3 w-3" /> Guardian consent certified
+                  </p>
+                ) : (
+                  <p className="text-[10px] font-semibold text-amber-600 mt-0.5">Legacy application — no consent record</p>
+                )}
+              </div>
+
+              <div>
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  <HeartPulse className="h-3 w-3" /> Medical Notes
+                </p>
+                <p className="text-[11px] text-foreground/90">{activeReg.medical_notes || 'None declared'}</p>
+              </div>
+            </div>
+
+            {activeReg.motivation && (
+              <div className="pt-2 border-t border-border/60">
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  <Sparkles className="h-3 w-3" /> Learner Motivation
+                </p>
+                <p className="text-[11px] text-foreground/90 italic leading-relaxed">"{activeReg.motivation}"</p>
+              </div>
+            )}
+          </div>
+        )}
+
         <form onSubmit={handleReviewSubmit} className="space-y-4 pt-2">
           <div>
             <label className="block text-xs font-bold text-foreground mb-1">Decision Status *</label>

@@ -30,12 +30,16 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     fetchNotifications();
+    const interval = setInterval(fetchNotifications, 15000);
 
     const unsubscribe = realtimeSync.subscribe(() => {
       fetchNotifications();
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
   }, []);
 
   const handleMarkAllRead = async () => {

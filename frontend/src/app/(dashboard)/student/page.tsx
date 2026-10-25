@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 import { ApiClient } from '@/lib/api';
 import { Activity, RecommendedActivity, NotificationItem } from '@/types';
 import { ActivityCard } from '@/components/activities/ActivityCard';
+import { RegistrationFormModal } from '@/components/activities/RegistrationFormModal';
 import { QrScannerModal } from '@/components/attendance/QrScannerModal';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -36,6 +37,7 @@ export default function StudentDashboard() {
   const [timeline, setTimeline] = useState<any[]>([]);
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [registrationTarget, setRegistrationTarget] = useState<RecommendedActivity | null>(null);
 
   const student = user?.student;
 
@@ -59,6 +61,8 @@ export default function StudentDashboard() {
 
   useEffect(() => {
     loadData();
+    const interval = setInterval(loadData, 20000);
+
     const unsubscribe = realtimeSync.subscribe((msg) => {
       if (
         msg.type === 'REGISTRATION_REVIEWED' ||
@@ -69,25 +73,16 @@ export default function StudentDashboard() {
         loadData();
       }
     });
-    return () => unsubscribe();
+
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
   }, [user]);
 
-  const handleRegister = async (activityId: string) => {
-    try {
-      await ApiClient.post('/registrations/register', { activityId });
-      toast.success('Registration Submitted!', {
-        description: 'Your registration is awaiting adviser review.',
-      });
-      realtimeSync.broadcast(
-        'REGISTRATION_SUBMITTED',
-        { activityId, studentName: user ? `${user.firstName} ${user.lastName}` : 'Nicole Maquilan' },
-        user ? `${user.firstName} ${user.lastName}` : 'Nicole Maquilan',
-        'STUDENT'
-      );
-      loadData();
-    } catch (err: any) {
-      toast.error('Registration Failed', { description: err.message });
-    }
+  const handleRegister = (activityId: string) => {
+    const act = recommendations.find((r) => r.id === activityId);
+    if (act) setRegistrationTarget(act);
   };
 
   const unlockedBadges = badges.filter((b) => b.isUnlocked);
@@ -370,6 +365,14 @@ export default function StudentDashboard() {
         isOpen={isQrModalOpen}
         onClose={() => setIsQrModalOpen(false)}
         onSuccess={loadData}
+      />
+
+      {/* Registration Consent Form */}
+      <RegistrationFormModal
+        isOpen={!!registrationTarget}
+        activity={registrationTarget}
+        onClose={() => setRegistrationTarget(null)}
+        onRegistered={loadData}
       />
     </div>
   );

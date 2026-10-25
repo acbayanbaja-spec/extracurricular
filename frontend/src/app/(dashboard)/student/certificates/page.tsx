@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/Badge';
 import { FileCheck, ShieldCheck, Eye, Printer, Award, ExternalLink } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
+import { realtimeSync } from '@/lib/realtime';
 
 export default function StudentCertificatesPage() {
   const { user } = useAuth();
@@ -16,12 +17,28 @@ export default function StudentCertificatesPage() {
   const [selectedCert, setSelectedCert] = useState<Certificate | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchCertificates = () => {
     setIsLoading(true);
     ApiClient.get<Certificate[]>('/certificates/my')
       .then((data) => setCertificates(data || []))
       .catch(() => {})
       .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    fetchCertificates();
+    const interval = setInterval(fetchCertificates, 30000);
+
+    const unsubscribe = realtimeSync.subscribe((msg) => {
+      if (msg.type === 'CERTIFICATE_ISSUED') {
+        fetchCertificates();
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+    };
   }, []);
 
   return (

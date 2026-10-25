@@ -27,6 +27,7 @@ export default function MyActivitiesPage() {
 
   useEffect(() => {
     fetchRegistrations();
+    const interval = setInterval(fetchRegistrations, 15000);
 
     const unsubscribe = realtimeSync.subscribe((msg) => {
       if (msg.type === 'REGISTRATION_REVIEWED' || msg.type === 'REGISTRATION_SUBMITTED') {
@@ -34,7 +35,14 @@ export default function MyActivitiesPage() {
       }
     });
 
-    return () => unsubscribe();
+    const handleRefocus = () => fetchRegistrations();
+    window.addEventListener('focus', handleRefocus);
+
+    return () => {
+      clearInterval(interval);
+      unsubscribe();
+      window.removeEventListener('focus', handleRefocus);
+    };
   }, []);
 
   const handleCancelRegistration = async (regId: string) => {

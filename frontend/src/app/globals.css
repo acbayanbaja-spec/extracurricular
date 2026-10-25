@@ -101,4 +101,29 @@
     background: white !important;
     color: black !important;
   }
+
+  /* When printing a certificate, isolate only the certificate paper */
+  body.printing-certificate * {
+    visibility: hidden !important;
+  }
+  body.printing-certificate,
+  body.printing-certificate #certificate-print-area,
+  body.printing-certificate #certificate-print-area * {
+    visibility: visible !important;
+  }
+  body.printing-certificate #certificate-print-area {
+    position: fixed !important;
+    inset: 0 !important;
+    margin: auto !important;
+    max-width: 100% !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: white !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+  }
+  body.printing-certificate .fixed.inset-0 {
+    display: none !important;
+  }
 }

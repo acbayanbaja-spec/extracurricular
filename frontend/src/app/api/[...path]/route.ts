@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import QRCode from 'qrcode';
-import { serverDb } from '@/lib/server/db';
+import { serverDb, ensureLiveSchema } from '@/lib/server/db';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'cnhs_jwt_super_secret_production_2026_key_#surallah';
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'cnhs_jwt_refresh_production_2026_secure_#centrala';
@@ -18,17 +18,39 @@ function getAuthUser(request: NextRequest): any | null {
   }
 }
 
+// Resolve the students row id for the authenticated user (JWT may predate studentId claims)
+async function resolveStudentId(authUser: any): Promise<string | null> {
+  if (!authUser) return null;
+  if (authUser.studentId) {
+    const exists = await serverDb.get('SELECT id FROM students WHERE id = ?', [authUser.studentId]);
+    if (exists) return authUser.studentId;
+  }
+  if (authUser.userId) {
+    const std = await serverDb.get('SELECT id FROM students WHERE user_id = ?', [authUser.userId]);
+    if (std?.id) return std.id;
+  }
+  return authUser.studentId || null;
+}
+
 // Helper to create notifications in DB
-async function createNotification(userId: string, title: string, message: string, type = 'info', link?: string) {
+async function createNotification(userId: string, title: string, message: string, type = 'system', link?: string) {
   try {
     const notifId = `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     await serverDb.run(
       `INSERT INTO notifications (id, user_id, title, message, type, link, is_read, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)`,
+       VALUES (?, ?, ?, ?, ?, ?, FALSE, CURRENT_TIMESTAMP)`,
       [notifId, userId, title, message, type, link || null]
     );
   } catch (err) {
     console.warn('[Notification Error]:', err);
+  }
+}
+
+async function notifyAllStaff(title: string, message: string, type: string, link?: string) {
+  const staff = await serverDb.query("SELECT id FROM users WHERE role IN ('TEACHER', 'ADMINISTRATOR')");
+  const ids = staff.length > 0 ? staff.map((s: any) => s.id) : ['usr-teacher-01'];
+  for (const id of ids) {
+    await createNotification(id, title, message, type, link);
   }
 }
 
@@ -40,6 +62,8 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
   const searchParams = request.nextUrl.searchParams;
 
   try {
+    await ensureLiveSchema();
+
     // 1. HEALTH CHECK
     if (path === 'health') {
       return NextResponse.json({
@@ -211,13 +235,33 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
       queryParams.push(limit);
 
       const activities = await serverDb.query(sql, queryParams);
+
+      // Attach the requesting student's own registration status so cards show Pending/Approved
+      const authUser = getAuthUser(request);
+      if (authUser?.role === 'STUDENT') {
+        const studentId = await resolveStudentId(authUser);
+        if (studentId) {
+          const myRegs = await serverDb.query(
+            'SELECT activity_id, status FROM registrations WHERE student_id = ?',
+            [studentId]
+          );
+          const regMap = new Map(myRegs.map((r: any) => [r.activity_id, r.status]));
+          return NextResponse.json({
+            success: true,
+            data: activities.map((a: any) =>
+              regMap.has(a.id) ? { ...a, myRegistration: { status: regMap.get(a.id) } } : a
+            ),
+          });
+        }
+      }
+
       return NextResponse.json({ success: true, data: activities });
     }
 
     // 6. RECOMMENDATIONS FOR STUDENT
     if (path === 'recommendations') {
       const authUser = getAuthUser(request);
-      const studentId = authUser?.studentId || 'std-01';
+      const studentId = (await resolveStudentId(authUser)) || authUser?.studentId || 'std-01';
 
       const student = await serverDb.get('SELECT * FROM students WHERE id = ?', [studentId]);
       const grade = student ? student.grade_level : 'Grade 11';
@@ -244,24 +288,38 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
           matchReason: reason,
           matchReasons: [
             reason,
-            `Verified DepEd points credit: +${act.points_value || 30} pts`,
+            `Verified DepEd points credit: +${act.points || act.points_value || 30} pts`,
             'High peer participation from Section Rizal & STEM',
           ],
         };
       });
 
-      return NextResponse.json({ success: true, data: recommended });
+      const myRegs = await serverDb.query(
+        'SELECT activity_id, status FROM registrations WHERE student_id = ?',
+        [studentId]
+      );
+      const regStatusByActivity = new Map(myRegs.map((r: any) => [r.activity_id, r.status]));
+      const recommendedFinal = recommended.map((rec: any) =>
+        regStatusByActivity.has(rec.id)
+          ? { ...rec, myRegistration: { status: regStatusByActivity.get(rec.id) }, isAlreadyRegistered: true }
+          : { ...rec, isAlreadyRegistered: false }
+      );
+
+      return NextResponse.json({ success: true, data: recommendedFinal });
     }
 
     // 7. MY REGISTRATIONS (Current Student)
     if (path === 'registrations/my') {
       const authUser = getAuthUser(request);
-      const studentId = authUser?.studentId || 'std-01';
+      const studentId = (await resolveStudentId(authUser)) || authUser?.studentId || 'std-01';
 
       const list = await serverDb.query(
-        `SELECT r.*, a.title as activity_title, a.date, a.start_time, a.end_time, a.location, a.points_value
+        `SELECT r.*, a.title as activity_title, a.date, a.start_time, a.end_time, a.location,
+                a.points as points_value, a.banner_image,
+                c.name as category_name, c.color as category_color
          FROM registrations r
          JOIN activities a ON r.activity_id = a.id
+         LEFT JOIN categories c ON a.category_id = c.id
          WHERE r.student_id = ?
          ORDER BY r.registration_date DESC`,
         [studentId]
@@ -278,7 +336,8 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
         SELECT r.*, a.title as activity_title, a.date, a.location,
                u.first_name, u.last_name, u.email,
                u.first_name || ' ' || u.last_name as student_name,
-               s.grade_level, s.section, s.student_id_number, s.student_id_number as lrn
+               s.grade_level, s.section, s.student_id_number, s.student_id_number as lrn,
+               s.guardian_name as student_guardian_name, s.guardian_phone as student_guardian_phone
         FROM registrations r
         JOIN activities a ON r.activity_id = a.id
         JOIN students s ON r.student_id = s.id
@@ -439,7 +498,42 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
       });
     }
 
-    // 12. CERTIFICATES VERIFICATION
+    // 12. MY CERTIFICATES (Current Student)
+    if (path === 'certificates/my') {
+      const authUser = getAuthUser(request);
+      const studentId = (await resolveStudentId(authUser)) || authUser?.studentId || 'std-01';
+
+      const list = await serverDb.query(
+        `SELECT c.*, a.title as activity_title,
+                iu.first_name as issuer_first_name, iu.last_name as issuer_last_name
+         FROM certificates c
+         LEFT JOIN activities a ON c.activity_id = a.id
+         LEFT JOIN users iu ON c.issued_by = iu.id
+         WHERE c.student_id = ?
+         ORDER BY c.issue_date DESC`,
+        [studentId]
+      );
+      return NextResponse.json({ success: true, data: list });
+    }
+
+    // 13. CERTIFICATES LIST (Teacher / Admin)
+    if (path === 'certificates') {
+      const list = await serverDb.query(
+        `SELECT c.*, a.title as activity_title,
+                s.student_id_number as lrn, s.grade_level, s.section,
+                u.first_name || ' ' || u.last_name as student_name,
+                iu.first_name as issuer_first_name, iu.last_name as issuer_last_name
+         FROM certificates c
+         JOIN students s ON c.student_id = s.id
+         JOIN users u ON s.user_id = u.id
+         LEFT JOIN activities a ON c.activity_id = a.id
+         LEFT JOIN users iu ON c.issued_by = iu.id
+         ORDER BY c.issue_date DESC`
+      );
+      return NextResponse.json({ success: true, data: list });
+    }
+
+    // 14. CERTIFICATES VERIFICATION
     if (path.startsWith('certificates/verify/')) {
       const certNumber = decodeURIComponent(path.split('/')[2] || '');
 
@@ -884,6 +978,8 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
   const path = params.path ? params.path.join('/') : '';
 
   try {
+    await ensureLiveSchema();
+
     let body: any = {};
     try {
       body = await request.json();
@@ -1206,7 +1302,7 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
     // 4. ATTENDANCE QR SCAN (Student check-in)
     if (path === 'attendance/qr/scan') {
       const authUser = getAuthUser(request);
-      const studentId = authUser?.studentId || 'std-01';
+      const studentId = (await resolveStudentId(authUser)) || authUser?.studentId || 'std-01';
       const { sessionId, token } = body;
 
       // Verify or find session
@@ -1260,7 +1356,7 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
         authUser?.userId || 'usr-student-01',
         'Official Attendance Verified! ✅',
         'Your QR check-in was successfully recorded. +25 development points awarded.',
-        'success'
+        'attendance'
       );
 
       return NextResponse.json({
@@ -1329,19 +1425,49 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       });
     }
 
-    // 7. REGISTRATION SUBMIT
+    // 7. REGISTRATION SUBMIT (with learner personal info + guardian consent)
     if (path === 'registrations/register') {
       const authUser = getAuthUser(request);
-      let studentId = authUser?.studentId;
-      if (!studentId && authUser?.userId) {
-        const std = await serverDb.get('SELECT id FROM students WHERE user_id = ?', [authUser.userId]);
-        studentId = std?.id;
-      }
-      if (!studentId) studentId = 'std-01';
+      const studentId = (await resolveStudentId(authUser)) || authUser?.studentId || 'std-01';
 
-      const { activityId } = body;
+      const {
+        activityId,
+        participantName,
+        address,
+        contactNumber,
+        guardianName,
+        guardianRelationship,
+        guardianContact,
+        guardianConsent,
+        medicalNotes,
+        motivation,
+      } = body;
+
       if (!activityId) {
         return NextResponse.json({ success: false, message: 'Activity ID is required' }, { status: 400 });
+      }
+
+      const missingFields: string[] = [];
+      if (!participantName) missingFields.push('full name');
+      if (!address) missingFields.push('address');
+      if (!contactNumber) missingFields.push('contact number');
+      if (!guardianName) missingFields.push("guardian's name");
+      if (!guardianRelationship) missingFields.push("guardian's relationship");
+      if (!guardianContact) missingFields.push("guardian's contact number");
+      if (!guardianConsent) missingFields.push('guardian consent confirmation');
+      if (missingFields.length > 0) {
+        return NextResponse.json(
+          { success: false, message: `Please complete the registration form. Missing: ${missingFields.join(', ')}.` },
+          { status: 400 }
+        );
+      }
+
+      const act = await serverDb.get('SELECT * FROM activities WHERE id = ?', [activityId]);
+      if (!act) {
+        return NextResponse.json({ success: false, message: 'Activity not found' }, { status: 404 });
+      }
+      if (act.registration_status && act.registration_status !== 'Registration Open') {
+        return NextResponse.json({ success: false, message: 'Registration for this activity is already closed.' }, { status: 400 });
       }
 
       // Check if student already registered
@@ -1356,36 +1482,68 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
         }, { status: 400 });
       }
 
-      const act = await serverDb.get('SELECT title FROM activities WHERE id = ?', [activityId]);
-      const actTitle = act?.title || 'Extracurricular Club';
-
       const regId = `reg-${Date.now()}`;
       await serverDb.run(
-        `INSERT INTO registrations (id, student_id, activity_id, status, registration_date)
-         VALUES (?, ?, ?, 'Pending', CURRENT_TIMESTAMP)`,
-        [regId, studentId, activityId]
+        `INSERT INTO registrations (
+           id, student_id, activity_id, status, registration_date,
+           participant_name, address, contact_number,
+           guardian_name, guardian_relationship, guardian_contact,
+           guardian_consent, medical_notes, motivation
+         ) VALUES (?, ?, ?, 'Pending', CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          regId,
+          studentId,
+          activityId,
+          String(participantName).trim(),
+          String(address).trim(),
+          String(contactNumber).trim(),
+          String(guardianName).trim(),
+          String(guardianRelationship).trim(),
+          String(guardianContact).trim(),
+          true,
+          medicalNotes ? String(medicalNotes).trim() : null,
+          motivation ? String(motivation).trim() : null,
+        ]
       );
+
+      // Keep the student profile guardian record in sync
+      if (guardianName || guardianContact) {
+        await serverDb.run(
+          'UPDATE students SET guardian_name = ?, guardian_phone = ? WHERE id = ?',
+          [String(guardianName).trim(), String(guardianContact).trim(), studentId]
+        );
+      }
 
       // Student info for notification
       const studentInfo = await serverDb.get(
         'SELECT u.first_name, u.last_name, s.grade_level, s.section FROM students s JOIN users u ON s.user_id = u.id WHERE s.id = ?',
         [studentId]
       );
-      const studentName = studentInfo ? `${studentInfo.first_name} ${studentInfo.last_name}` : 'Nicole Maquilan';
+      const studentName = studentInfo
+        ? `${studentInfo.first_name} ${studentInfo.last_name}`
+        : String(participantName);
 
-      // Notify teachers and admins
-      await createNotification(
-        'usr-teacher-01',
-        `New Application: ${studentName} 📝`,
-        `${studentName} (${studentInfo?.grade_level || 'Grade 10'} - ${studentInfo?.section || 'Rizal'}) applied for "${actTitle}".`,
-        'info',
+      // Notify all teachers and admins
+      await notifyAllStaff(
+        `New Application: ${studentName}`,
+        `${studentName} (${studentInfo?.grade_level || 'Grade 10'} - ${studentInfo?.section || 'Rizal'}) applied for "${act.title || 'Extracurricular Club'}" with guardian consent from ${guardianName}.`,
+        'registration',
         '/teacher/registrations'
+      );
+
+      // Confirmation notification to the student
+      await createNotification(
+        authUser?.userId || studentInfo?.user_id || 'usr-student-01',
+        'Registration Submitted',
+        `Your application for "${act.title || 'Extracurricular Club'}" has been received and is now pending adviser approval. You will be notified once reviewed.`,
+        'registration',
+        '/student/my-activities'
       );
 
       return NextResponse.json({
         success: true,
         message: 'Registration submitted for adviser approval',
-        data: { id: regId, studentName, activityTitle: actTitle },
+        data: { id: regId, studentName, activityTitle: act.title || 'Extracurricular Club' },
       });
     }
 
@@ -1399,17 +1557,21 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       await serverDb.run(
         `INSERT INTO announcements (id, author_id, title, content, target_audience, is_pinned, image_url, publish_date)
          VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
-        [annId, authorId, title, content, targetAudience || 'All', isPinned ? 1 : 0, imageUrl || null]
+        [annId, authorId, title, content, targetAudience || 'All', !!isPinned, imageUrl || null]
       );
 
       // Create notification for learners
-      await createNotification(
-        'usr-student-01',
-        `📢 ${title}`,
-        content.length > 120 ? `${content.substring(0, 117)}...` : content,
-        'info',
-        '/announcements'
-      );
+      const studentUsers = await serverDb.query("SELECT id FROM users WHERE role IN ('STUDENT')");
+      const targetStudents = studentUsers.length > 0 ? studentUsers.map((s: any) => s.id) : ['usr-student-01'];
+      for (const sid of targetStudents) {
+        await createNotification(
+          sid,
+          `📢 ${title}`,
+          content.length > 120 ? `${content.substring(0, 117)}...` : content,
+          'announcement',
+          '/announcements'
+        );
+      }
 
       return NextResponse.json({
         success: true,
@@ -1489,13 +1651,17 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       );
 
       // Notify students of the new activity
-      await createNotification(
-        'usr-student-01',
-        `🌟 New Activity: ${title}`,
-        `Now open for registration at ${location}. Earn +${pointsVal} development points!`,
-        'success',
-        '/student/discover'
-      );
+      const notifiedStudents = await serverDb.query("SELECT id FROM users WHERE role IN ('STUDENT')");
+      const studentIds = notifiedStudents.length > 0 ? notifiedStudents.map((s: any) => s.id) : ['usr-student-01'];
+      for (const sid of studentIds) {
+        await createNotification(
+          sid,
+          `🌟 New Activity: ${title}`,
+          `Now open for registration at ${location}. Earn +${pointsVal} development points!`,
+          'system',
+          '/student/discover'
+        );
+      }
 
       return NextResponse.json({
         success: true,
@@ -1508,30 +1674,46 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
     if (path === 'certificates') {
       const authUser = getAuthUser(request);
       const issuerId = authUser?.userId || 'usr-teacher-01';
-      const { studentId, activityId, title, description } = body;
-      const certNumber = `CNHS-CERT-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const { studentId: rawStudentId, activityId, title, description } = body;
+      const targetStudentId = rawStudentId || 'std-01';
+      const certNumber = `CNHS-CERT-2026-${Date.now().toString().slice(-8)}`;
       const certId = `cert-${Date.now()}`;
       const defaultPdf = 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80';
+
+      if (!title) {
+        return NextResponse.json({ success: false, message: 'Certificate title is required' }, { status: 400 });
+      }
+
+      const alreadyIssued = await serverDb.get(
+        'SELECT id FROM certificates WHERE student_id = ? AND activity_id = ? AND title = ?',
+        [targetStudentId, activityId || 'act-01', title]
+      );
+      if (alreadyIssued) {
+        return NextResponse.json(
+          { success: false, message: 'This exact certificate was already issued to the student.' },
+          { status: 400 }
+        );
+      }
 
       await serverDb.run(
         `INSERT INTO certificates (id, student_id, activity_id, certificate_number, title, description, file_url, issue_date, issued_by, status)
          VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?, 'VERIFIED')`,
-        [certId, studentId || 'std-01', activityId || 'act-01', certNumber, title, description || null, defaultPdf, issuerId]
+        [certId, targetStudentId, activityId || 'act-01', certNumber, title, description || null, defaultPdf, issuerId]
       );
 
       // Award points (+50 points) for certificate
-      await serverDb.run('UPDATE students SET total_points = total_points + 50 WHERE id = ?', [studentId || 'std-01']);
+      await serverDb.run('UPDATE students SET total_points = total_points + 50 WHERE id = ?', [targetStudentId]);
 
       // Look up target student user_id
-      const std = await serverDb.get('SELECT user_id, first_name FROM students s JOIN users u ON s.user_id = u.id WHERE s.id = ?', [studentId || 'std-01']);
+      const std = await serverDb.get('SELECT user_id, first_name FROM students s JOIN users u ON s.user_id = u.id WHERE s.id = ?', [targetStudentId]);
       const targetUserId = std?.user_id || 'usr-student-01';
 
       // Notify student
       await createNotification(
         targetUserId,
         'Official Certificate Issued! 📜',
-        `You have been awarded "${title}". Certificate #${certNumber} is now accredited.`,
-        'success',
+        `You have been awarded "${title}". Certificate #${certNumber} is now accredited and ready in your portfolio.`,
+        'certificate',
         '/student/certificates'
       );
 
@@ -1578,7 +1760,7 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
         targetUserId,
         `Honor Badge Conferred: ${badgeName}! 🏅`,
         `Congratulations ${student?.first_name || 'Centralian'}! You were awarded the ${badgeName} (${badgeTier} Tier) badge by Adviser Javidec Monsion.`,
-        'success',
+        'badge',
         '/student/badges'
       );
 
@@ -1603,19 +1785,29 @@ export async function PUT(request: NextRequest, { params }: { params: { path: st
   const path = params.path ? params.path.join('/') : '';
 
   try {
+    await ensureLiveSchema();
+
     let body: any = {};
     try {
       body = await request.json();
     } catch {}
 
     // 1. REVIEW REGISTRATION STATUS
+    // 1. REVIEW REGISTRATION STATUS
     if (path.startsWith('registrations/') && path.endsWith('/status')) {
       const regId = path.split('/')[1];
       const { status, reviewNotes } = body;
+      const authUser = getAuthUser(request);
+      const reviewerId = authUser?.userId || 'usr-teacher-01';
+
+      const reviewer = await serverDb.get('SELECT first_name, last_name FROM users WHERE id = ?', [reviewerId]);
+      const reviewerName = reviewer
+        ? `Adviser ${reviewer.first_name} ${reviewer.last_name}`
+        : 'the Activity Adviser';
 
       await serverDb.run(
-        'UPDATE registrations SET status = ?, review_notes = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [status, reviewNotes || null, regId]
+        'UPDATE registrations SET status = ?, review_notes = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [status, reviewNotes || null, reviewerId, regId]
       );
 
       // Find the registration details
@@ -1638,26 +1830,24 @@ export async function PUT(request: NextRequest, { params }: { params: { path: st
       }
 
       // Notify the actual student
-      const targetUserId = regInfo?.user_id || 'usr-student-01';
+      const targetUserId = regInfo?.user_id;
       const studentFirstName = regInfo?.first_name || 'Centralian';
       const activityTitle = regInfo?.activity_title || 'Extracurricular Club';
       const isApproved = status === 'Approved';
 
       const notifTitle = isApproved ? `Registration Approved! 🎉` : `Registration ${status}`;
       const notifMessage = isApproved
-        ? `Great news, ${studentFirstName}! Your registration for "${activityTitle}" has been approved by Adviser Javidec Monsion.${reviewNotes ? ` Adviser note: "${reviewNotes}"` : ''}`
-        : `Your registration for "${activityTitle}" was marked as ${status.toLowerCase()} by Adviser Javidec Monsion.${reviewNotes ? ` Reason: "${reviewNotes}"` : ''}`;
+        ? `Great news, ${studentFirstName}! Your registration for "${activityTitle}" has been approved by ${reviewerName}.${reviewNotes ? ` Adviser note: "${reviewNotes}"` : ''}`
+        : `Your registration for "${activityTitle}" was marked as ${String(status).toLowerCase()} by ${reviewerName}.${reviewNotes ? ` Reason: "${reviewNotes}"` : ''}`;
 
-      await createNotification(
-        targetUserId,
-        notifTitle,
-        notifMessage,
-        isApproved ? 'success' : 'warning',
-        '/student/my-activities'
-      );
-
-      if (targetUserId !== 'usr-student-01' && regInfo?.student_id === 'std-01') {
-        await createNotification('usr-student-01', notifTitle, notifMessage, isApproved ? 'success' : 'warning', '/student/my-activities');
+      if (targetUserId) {
+        await createNotification(
+          targetUserId,
+          notifTitle,
+          notifMessage,
+          'registration',
+          '/student/my-activities'
+        );
       }
 
       return NextResponse.json({
@@ -1688,12 +1878,97 @@ export async function PUT(request: NextRequest, { params }: { params: { path: st
         registrationStatus,
       } = body;
 
+      const act = await serverDb.get('SELECT * FROM activities WHERE id = ?', [actId]);
+      if (!act) {
+        return NextResponse.json({ success: false, message: 'Activity not found' }, { status: 404 });
+      }
+
       await serverDb.run(
         `UPDATE activities 
          SET title = ?, description = ?, category_id = ?, location = ?, date = ?, start_time = ?, end_time = ?, max_participants = ?, status = ?, registration_status = ?
          WHERE id = ?`,
-        [title, description, categoryId, location, date, startTime, endTime, maxParticipants, status, registrationStatus, actId]
+        [
+          title ?? act.title,
+          description ?? act.description,
+          categoryId ?? act.category_id,
+          location ?? act.location,
+          date ?? act.date,
+          startTime ?? act.start_time,
+          endTime ?? act.end_time,
+          maxParticipants ?? act.max_participants,
+          status ?? act.status,
+          registrationStatus ?? act.registration_status,
+          actId,
+        ]
       );
+
+      // Auto-issue verified certificates to all approved participants when an activity is completed
+      if (status === 'Completed' && act.status !== 'Completed') {
+        const participants = await serverDb.query(
+          `SELECT r.id as registration_id, r.student_id, s.user_id, u.first_name, u.last_name
+           FROM registrations r
+           JOIN students s ON r.student_id = s.id
+           JOIN users u ON s.user_id = u.id
+           WHERE r.activity_id = ? AND r.status = 'Approved'`,
+          [actId]
+        );
+
+        const activityTitle = title ?? act.title;
+        const activityPoints = act.points || act.points_value || 20;
+        const issuerId = getAuthUser(request)?.userId || 'usr-teacher-01';
+
+        for (const p of participants) {
+          const alreadyCertified = await serverDb.get(
+            'SELECT id FROM certificates WHERE student_id = ? AND activity_id = ?',
+            [p.student_id, actId]
+          );
+          if (alreadyCertified) continue;
+
+          const certId = `cert-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+          const certNumber = `CNHS-CERT-2026-${Date.now().toString().slice(-8)}`;
+          const certTitle = `Certificate of Completion — ${activityTitle}`;
+
+          await serverDb.run(
+            `INSERT INTO certificates (id, student_id, activity_id, certificate_number, title, description, file_url, issue_date, issued_by, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_DATE, ?, 'VERIFIED')`,
+            [
+              certId,
+              p.student_id,
+              actId,
+              certNumber,
+              certTitle,
+              `Automatically conferred for approved participation and completion of "${activityTitle}" at Centrala National High School.`,
+              'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80',
+              issuerId,
+            ]
+          );
+
+          await serverDb.run(
+            'UPDATE registrations SET status = ?, reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?',
+            ['Completed', issuerId, p.registration_id]
+          );
+
+          await serverDb.run(
+            'UPDATE students SET total_points = total_points + ? WHERE id = ?',
+            [activityPoints, p.student_id]
+          );
+
+          await createNotification(
+            p.user_id,
+            'Certificate Auto-Issued! 📜',
+            `Congratulations ${p.first_name || 'Centralian'}! "${certTitle}" (No. ${certNumber}) has been added to your credentials for completing "${activityTitle}". +${activityPoints} development points awarded.`,
+            'certificate',
+            '/student/certificates'
+          );
+        }
+
+        await notifyAllStaff(
+          `Activity Completed: ${activityTitle}`,
+          `${participants.length} approved participant(s) received verified certificates automatically upon completion of "${activityTitle}".`,
+          'certificate',
+          '/teacher/students'
+        );
+      }
 
       return NextResponse.json({ success: true, message: 'Activity updated successfully!' });
     }
@@ -1705,6 +1980,30 @@ export async function PUT(request: NextRequest, { params }: { params: { path: st
 
       await serverDb.run('UPDATE users SET status = ? WHERE id = ?', [status, userId]);
       return NextResponse.json({ success: true, message: `User marked as ${status}` });
+    }
+
+    // 4. MARK SINGLE NOTIFICATION AS READ
+    if (path.startsWith('notifications/') && path.endsWith('/read')) {
+      const notifId = path.split('/')[1];
+      const authUser = getAuthUser(request);
+      const userId = authUser?.userId || 'usr-student-01';
+
+      await serverDb.run(
+        'UPDATE notifications SET is_read = TRUE, read_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?',
+        [notifId, userId]
+      );
+      return NextResponse.json({ success: true, message: 'Notification marked as read' });
+    }
+
+    if (path === 'notifications/read-all') {
+      const authUser = getAuthUser(request);
+      const userId = authUser?.userId || 'usr-student-01';
+
+      await serverDb.run(
+        'UPDATE notifications SET is_read = TRUE, read_at = CURRENT_TIMESTAMP WHERE user_id = ?',
+        [userId]
+      );
+      return NextResponse.json({ success: true, message: 'All notifications marked as read' });
     }
 
     // 4. MARK ALL NOTIFICATIONS AS READ
@@ -1730,6 +2029,8 @@ export async function DELETE(request: NextRequest, { params }: { params: { path:
   const path = params.path ? params.path.join('/') : '';
 
   try {
+    await ensureLiveSchema();
+
     // 1. DELETE ANNOUNCEMENT
     if (path.startsWith('announcements/')) {
       const annId = path.split('/')[1];
@@ -1742,6 +2043,36 @@ export async function DELETE(request: NextRequest, { params }: { params: { path:
       const actId = path.split('/')[1];
       await serverDb.run('DELETE FROM activities WHERE id = ?', [actId]);
       return NextResponse.json({ success: true, message: 'Activity deleted successfully' });
+    }
+
+    // 3. CANCEL REGISTRATION (Student)
+    if (path.startsWith('registrations/')) {
+      const regId = path.split('/')[1];
+      const authUser = getAuthUser(request);
+
+      const reg = await serverDb.get('SELECT * FROM registrations WHERE id = ?', [regId]);
+      if (!reg) {
+        return NextResponse.json({ success: false, message: 'Registration not found' }, { status: 404 });
+      }
+
+      const studentId = (await resolveStudentId(authUser)) || authUser?.studentId;
+      if (studentId && reg.student_id !== studentId && authUser?.role !== 'TEACHER' && authUser?.role !== 'ADMINISTRATOR') {
+        return NextResponse.json({ success: false, message: 'You can only cancel your own registrations.' }, { status: 403 });
+      }
+
+      await serverDb.run(
+        'UPDATE registrations SET status = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?',
+        ['Cancelled', regId]
+      );
+
+      if (reg.status === 'Approved') {
+        await serverDb.run(
+          'UPDATE activities SET current_participants = GREATEST(0, current_participants - 1) WHERE id = ?',
+          [reg.activity_id]
+        );
+      }
+
+      return NextResponse.json({ success: true, message: 'Registration cancelled successfully' });
     }
 
     return NextResponse.json({ success: false, message: `Route /api/${path} not found` }, { status: 404 });

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { ApiClient } from '@/lib/api';
 import { Activity, Category } from '@/types';
 import { ActivityCard } from '@/components/activities/ActivityCard';
+import { RegistrationFormModal } from '@/components/activities/RegistrationFormModal';
 import { Button } from '@/components/ui/Button';
 import { Search, Filter, Compass, SlidersHorizontal, Check } from 'lucide-react';
 import { toast } from 'sonner';
@@ -20,6 +21,7 @@ export default function DiscoverActivitiesPage() {
   const [sortBy, setSortBy] = useState('date');
   const [isLoading, setIsLoading] = useState(true);
   const [registeringId, setRegisteringId] = useState<string | null>(null);
+  const [registrationTarget, setRegistrationTarget] = useState<Activity | null>(null);
 
   const fetchActivities = () => {
     setIsLoading(true);
@@ -55,31 +57,14 @@ export default function DiscoverActivitiesPage() {
     return () => clearTimeout(timer);
   }, [search, selectedCategory, selectedGrade, sortBy]);
 
-  const handleRegister = async (activityId: string) => {
-    setRegisteringId(activityId);
-    try {
-      await ApiClient.post('/registrations/register', { activityId });
-      const act = activities.find((a) => a.id === activityId);
-      const studentDisplayName = user ? `${user.firstName} ${user.lastName}` : 'Nicole Maquilan';
-      toast.success('Registration Submitted! 🎉', {
-        description: 'Your registration request has been forwarded to the adviser for approval.',
-      });
-      realtimeSync.broadcast(
-        'REGISTRATION_SUBMITTED',
-        {
-          activityId,
-          activityTitle: act?.title || 'Extracurricular Club',
-          studentName: studentDisplayName,
-        },
-        studentDisplayName,
-        'STUDENT'
-      );
-      fetchActivities();
-    } catch (err: any) {
-      toast.error('Registration Failed', { description: err.message });
-    } finally {
-      setRegisteringId(null);
+  const handleOpenRegistration = (activityId: string) => {
+    const act = activities.find((a) => a.id === activityId);
+    if (!act) return;
+    if (user?.role !== 'STUDENT') {
+      toast.error('Sign in as a student to register');
+      return;
     }
+    setRegistrationTarget(act);
   };
 
   return (
@@ -203,12 +188,20 @@ export default function DiscoverActivitiesPage() {
             <ActivityCard
               key={act.id}
               activity={act}
-              onRegister={handleRegister}
+              onRegister={handleOpenRegistration}
               isRegistering={registeringId === act.id}
             />
           ))}
         </div>
       )}
+
+      {/* Registration Consent Form */}
+      <RegistrationFormModal
+        isOpen={!!registrationTarget}
+        activity={registrationTarget}
+        onClose={() => setRegistrationTarget(null)}
+        onRegistered={fetchActivities}
+      />
     </div>
   );
 }

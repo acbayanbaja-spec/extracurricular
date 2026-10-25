@@ -12,6 +12,7 @@ const cleanDbUrl = rawDbUrl.replace(/([?&])sslmode=[^&]+(&|$)/, '$1').replace(/\
 declare global {
   var _cnhsPgPool: Pool | undefined;
   var _cnhsInMemoryStore: any | undefined;
+  var _cnhsSchemaReady: Promise<void> | undefined;
 }
 
 if (!global._cnhsPgPool) {
@@ -29,6 +30,36 @@ if (!global._cnhsPgPool) {
 }
 
 const pool = global._cnhsPgPool;
+
+const LIVE_SCHEMA_PATCHES: string[] = [
+  `ALTER TABLE registrations ADD COLUMN IF NOT EXISTS participant_name VARCHAR(150)`,
+  `ALTER TABLE registrations ADD COLUMN IF NOT EXISTS address TEXT`,
+  `ALTER TABLE registrations ADD COLUMN IF NOT EXISTS contact_number VARCHAR(32)`,
+  `ALTER TABLE registrations ADD COLUMN IF NOT EXISTS guardian_name VARCHAR(128)`,
+  `ALTER TABLE registrations ADD COLUMN IF NOT EXISTS guardian_relationship VARCHAR(64)`,
+  `ALTER TABLE registrations ADD COLUMN IF NOT EXISTS guardian_contact VARCHAR(64)`,
+  `ALTER TABLE registrations ADD COLUMN IF NOT EXISTS guardian_consent BOOLEAN DEFAULT FALSE`,
+  `ALTER TABLE registrations ADD COLUMN IF NOT EXISTS medical_notes TEXT`,
+  `ALTER TABLE registrations ADD COLUMN IF NOT EXISTS motivation TEXT`,
+  `ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check`,
+  `ALTER TABLE notifications ADD CONSTRAINT notifications_type_check CHECK (type IN ('registration', 'attendance', 'achievement', 'badge', 'certificate', 'announcement', 'system', 'info', 'success', 'warning'))`,
+];
+
+export function ensureLiveSchema(): Promise<void> {
+  if (!global._cnhsSchemaReady) {
+    global._cnhsSchemaReady = (async () => {
+      if (!pool) return;
+      for (const sql of LIVE_SCHEMA_PATCHES) {
+        try {
+          await pool.query(sql);
+        } catch (err: any) {
+          console.warn(`[ensureLiveSchema] skipped (${err.message}): ${sql.slice(0, 70)}`);
+        }
+      }
+    })();
+  }
+  return global._cnhsSchemaReady;
+}
 
 // Resilient In-Memory Fallback Seed Store
 function initFallbackStore() {
@@ -365,6 +396,9 @@ export const serverDb = {
         const id = params[0];
         return store.users.filter((u: any) => u.id === id) as T[];
       }
+      if (lower.includes('where role in')) {
+        return store.users.filter((u: any) => params.includes(u.role)) as T[];
+      }
       return store.users as T[];
     }
 
@@ -397,6 +431,16 @@ export const serverDb = {
       if (lower.includes('certificate_number = ?')) {
         const cert = store.certificates.find((c: any) => c.certificate_number === params[0]);
         return (cert ? [cert] : []) as T[];
+      }
+      if (lower.includes('student_id = ? and activity_id = ? and title = ?')) {
+        const [studentId, activityId, title] = params;
+        return store.certificates.filter(
+          (c: any) => c.student_id === studentId && c.activity_id === activityId && c.title === title
+        ) as T[];
+      }
+      if (lower.includes('student_id = ? and activity_id = ?')) {
+        const [studentId, activityId] = params;
+        return store.certificates.filter((c: any) => c.student_id === studentId && c.activity_id === activityId) as T[];
       }
       if (lower.includes('student_id = ?')) {
         return store.certificates.filter((c: any) => c.student_id === params[0]) as T[];
@@ -439,6 +483,23 @@ export const serverDb = {
     }
 
     if (lower.includes('from registrations')) {
+      if (lower.includes('where student_id = ? and activity_id = ?')) {
+        const [studentId, activityId] = params;
+        return store.registrations.filter(
+          (r: any) => r.student_id === studentId && r.activity_id === activityId
+        ) as T[];
+      }
+
+      if (lower.includes('where r.activity_id = ?') && lower.includes('r.status')) {
+        const activityId = params[0];
+        return store.registrations
+          .filter((r: any) => r.activity_id === activityId && (r.status === 'Approved' || r.status === 'Completed'))
+          .map((r: any) => {
+            const student = store.students.find((s: any) => s.id === r.student_id) || {};
+            return { ...r, user_id: student.user_id };
+          }) as T[];
+      }
+
       if (lower.includes('where r.id = ?') || lower.includes('where id = ?')) {
         const regId = params[0];
         const r = store.registrations.find((reg: any) => reg.id === regId);
@@ -465,6 +526,7 @@ export const serverDb = {
         const studentRegs = store.registrations.filter((r: any) => r.student_id === studentId);
         return studentRegs.map((r: any) => {
           const act = store.activities.find((a: any) => a.id === r.activity_id) || {};
+          const cat = store.categories.find((c: any) => c.id === act.category_id) || {};
           return {
             ...r,
             activity_title: act.title || 'Extracurricular Program',
@@ -472,6 +534,8 @@ export const serverDb = {
             start_time: act.start_time,
             end_time: act.end_time,
             location: act.location,
+            category_name: cat.name || 'General',
+            category_color: cat.color || '#4F46E5',
             points_value: act.points || act.points_value || 25,
             points: act.points || act.points_value || 25,
           };
@@ -493,6 +557,9 @@ export const serverDb = {
           grade_level: student.grade_level || 'Grade 10',
           section: student.section || 'Rizal',
           student_id_number: student.student_id_number || '109823450012',
+          lrn: student.student_id_number || '109823450012',
+          student_guardian_name: student.guardian_name || null,
+          student_guardian_phone: student.guardian_phone || null,
         };
       }) as T[];
     }
@@ -628,40 +695,91 @@ export const serverDb = {
     }
 
     if (lower.startsWith('insert into registrations')) {
+      // Params: id, student_id, activity_id, participant_name, address, contact_number,
+      //         guardian_name, guardian_relationship, guardian_contact, guardian_consent,
+      //         medical_notes, motivation
       store.registrations.unshift({
         id: params[0],
         student_id: params[1],
         activity_id: params[2],
-        status: params[3] || 'Pending',
+        status: 'Pending',
         registration_date: new Date().toISOString(),
+        participant_name: params[3],
+        address: params[4],
+        contact_number: params[5],
+        guardian_name: params[6],
+        guardian_relationship: params[7],
+        guardian_contact: params[8],
+        guardian_consent: params[9],
+        medical_notes: params[10],
+        motivation: params[11],
       });
       return { changes: 1 };
     }
 
     if (lower.startsWith('update registrations')) {
-      // e.g. UPDATE registrations SET status = ?, review_notes = ? WHERE id = ?
+      const placeholders = (sql.match(/\?/g) || []).length;
+      const regId = params[params.length - 1];
       const status = params[0];
-      const reviewNotes = params[1];
-      const regId = params[2];
+      let reviewNotes: any;
+      let reviewedBy: any;
+      if (placeholders >= 4) {
+        reviewNotes = params[1];
+        reviewedBy = params[2];
+      } else if (placeholders === 3) {
+        reviewedBy = params[1];
+      }
       const reg = store.registrations.find((r: any) => r.id === regId);
       if (reg) {
         reg.status = status;
-        reg.review_notes = reviewNotes;
+        if (reviewNotes !== undefined) reg.review_notes = reviewNotes;
+        if (reviewedBy !== undefined) reg.reviewed_by = reviewedBy;
         reg.reviewed_at = new Date().toISOString();
       }
       return { changes: 1 };
     }
 
+    if (lower.startsWith('update notifications')) {
+      if (lower.includes('set is_read')) {
+        if (lower.includes('where id = ? and user_id = ?')) {
+          const [notifId, userId] = params;
+          const notif = store.notifications.find((n: any) => n.id === notifId && n.user_id === userId);
+          if (notif) notif.is_read = true;
+        } else if (lower.includes('where user_id = ?')) {
+          const userId = params[params.length - 1];
+          store.notifications.forEach((n: any) => {
+            if (n.user_id === userId) n.is_read = true;
+          });
+        }
+      }
+      return { changes: 1 };
+    }
+
+    if (lower.startsWith('update students')) {
+      if (lower.includes('guardian_name') && params.length === 3) {
+        const [guardianName, guardianPhone, studentId] = params;
+        const student = store.students.find((s: any) => s.id === studentId);
+        if (student) {
+          student.guardian_name = guardianName || student.guardian_name;
+          student.guardian_phone = guardianPhone || student.guardian_phone;
+        }
+      }
+      return { changes: 1 };
+    }
+
     if (lower.startsWith('insert into certificates')) {
+      // Params: id, student_id, activity_id, certificate_number, title, description, file_url, issued_by
       store.certificates.unshift({
         id: params[0],
         student_id: params[1],
         activity_id: params[2],
-        title: params[3],
-        description: params[4],
-        certificate_number: params[5],
+        certificate_number: params[3],
+        title: params[4],
+        description: params[5],
         file_url: params[6] || 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80',
+        issued_by: params[7],
         issue_date: new Date().toISOString().split('T')[0],
+        status: 'VERIFIED',
       });
       return { changes: 1 };
     }

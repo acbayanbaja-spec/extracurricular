@@ -124,24 +124,37 @@ export interface Registration {
   review_notes?: string | null;
   reviewed_by?: string | null;
   reviewed_at?: string | null;
+  participant_name?: string | null;
+  address?: string | null;
+  contact_number?: string | null;
+  guardian_name?: string | null;
+  guardian_relationship?: string | null;
+  guardian_contact?: string | null;
+  guardian_consent?: boolean | null;
+  medical_notes?: string | null;
+  motivation?: string | null;
   activity_title?: string;
   activity_slug?: string;
   location?: string;
   date?: string;
   start_time?: string;
   end_time?: string;
+  points_value?: number;
   banner_image?: string;
   category_name?: string;
   category_color?: string;
   organization_name?: string;
   student_name?: string;
   student_id_number?: string;
+  lrn?: string;
   grade_level?: string;
   section?: string;
   email?: string;
   first_name?: string;
   last_name?: string;
   avatar_url?: string;
+  student_guardian_name?: string | null;
+  student_guardian_phone?: string | null;
 }
 
 export interface AttendanceSession {
