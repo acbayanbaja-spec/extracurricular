@@ -538,38 +538,6 @@ export const serverDb = {
     }
 
     if (lower.includes('from registrations')) {
-      // Adviser session roster: every registered learner plus their attendance for one session
-      if (lower.includes('left join attendance_records') && lower.includes('r.activity_id = ?')) {
-        const [sessionId, activityId] = params;
-        return store.registrations
-          .filter((r: any) => r.activity_id === activityId)
-          .map((r: any) => {
-            const student: any = store.students.find((s: any) => s.id === r.student_id) || {};
-            const user: any = store.users.find((u: any) => u.id === student.user_id) || {};
-            const rec: any = store.attendance_records.find(
-              (ar: any) => ar.session_id === sessionId && ar.student_id === r.student_id
-            ) || {};
-            return {
-              student_id: student.id,
-              student_id_number: student.student_id_number,
-              grade_level: student.grade_level,
-              section: student.section,
-              track_strand: student.track_strand,
-              first_name: user.first_name,
-              last_name: user.last_name,
-              email: user.email,
-              avatar_url: user.avatar_url || null,
-              enrolment_status: r.status,
-              registration_id: r.id,
-              record_id: rec.id || null,
-              status: rec.status || 'Absent',
-              check_in_time: rec.check_in_time || null,
-              check_in_method: rec.check_in_method || null,
-              notes: rec.notes || null,
-            };
-          }) as T[];
-      }
-
       // Learner attendance ledger: approved enrolments plus any session they actually attended
       if (lower.includes('left join attendance_records')) {
         const studentId = params[0];
@@ -704,6 +672,47 @@ export const serverDb = {
     }
 
     if (lower.includes('from students')) {
+      // Adviser session roster: registered learners plus anyone with a record for this session
+      if (lower.includes('left join registrations')) {
+        const [activityId, sessionId] = params;
+        return store.students
+          .map((s: any) => {
+            const r: any = store.registrations.find(
+              (reg: any) => reg.activity_id === activityId && reg.student_id === s.id
+            );
+            const rec: any = store.attendance_records.find(
+              (ar: any) => ar.session_id === sessionId && ar.student_id === s.id
+            );
+            if (!r && !rec) return null;
+            const u: any = store.users.find((usr: any) => usr.id === s.user_id) || {};
+            return {
+              student_id: s.id,
+              student_id_number: s.student_id_number,
+              grade_level: s.grade_level,
+              section: s.section,
+              track_strand: s.track_strand,
+              first_name: u.first_name || r?.participant_name || 'Learner',
+              last_name: u.last_name || '',
+              email: u.email || null,
+              avatar_url: u.avatar_url || null,
+              enrolment_status: r?.status || 'Walk-in',
+              registration_id: r?.id || null,
+              record_id: rec?.id || null,
+              status: rec?.status || 'Absent',
+              check_in_time: rec?.check_in_time || null,
+              check_in_method: rec?.check_in_method || null,
+              notes: rec?.notes || null,
+            };
+          })
+          .filter(Boolean)
+          .sort((a: any, b: any) => {
+            const credited = (x: any) => (['Approved', 'Completed'].includes(x.enrolment_status) ? 1 : 0);
+            const present = (x: any) => (['Present', 'Late'].includes(x.status) ? 1 : 0);
+            return credited(b) - credited(a) || present(b) - present(a) ||
+              String(a.last_name || a.student_id_number).localeCompare(String(b.last_name || b.student_id_number));
+          }) as T[];
+      }
+
       if (lower.includes('where user_id = ?')) {
         return store.students.filter((s: any) => s.user_id === params[0]) as T[];
       }

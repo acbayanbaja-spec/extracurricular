@@ -176,3 +176,19 @@
 .cnhs-qr-pop {
   animation: cnhs-qr-pop 0.35s ease-out both;
 }
+
+/* Adviser roster: a learner who just scanned rises to the top and flashes green */
+@keyframes cnhs-checkin-arrive {
+  0% {
+    background-color: rgba(16, 185, 129, 0.22);
+  }
+  70% {
+    background-color: rgba(16, 185, 129, 0.10);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.cnhs-checkin-arrive {
+  animation: cnhs-checkin-arrive 3.2s ease-out both;
+}

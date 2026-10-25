@@ -2,22 +2,23 @@ import { toast } from 'sonner';
 
 export const LIVE_BACKEND_URL = 'https://extracurricular-sc5rlfdq.b4a.run/api';
 
+const LOCAL_DEV_HOSTS = ['localhost', '127.0.0.1'];
+
+function isLocalDev(): boolean {
+  return typeof window !== 'undefined' && LOCAL_DEV_HOSTS.includes(window.location.hostname);
+}
+
 export function getBaseApiUrl(): string {
-  // If in browser context
+  const override = process.env.NEXT_PUBLIC_API_URL;
+
   if (typeof window !== 'undefined') {
-    const isLocalHost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-
-    // In production on Vercel or any live domain, use same-origin /api proxy route to eliminate CORS completely
-    if (!isLocalHost) {
-      return '/api';
-    }
+    // Hosted builds always use the same-origin serverless route: no CORS, and a stale
+    // NEXT_PUBLIC_API_URL baked into the bundle can never point the live site at a laptop.
+    if (!isLocalDev()) return '/api';
+    return override ? override.replace(/\/$/, '') : '/api';
   }
 
-  // Local development fallback
-  if (process.env.NEXT_PUBLIC_API_URL) {
-    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '');
-  }
-
+  if (override) return override.replace(/\/$/, '');
   return 'http://localhost:5000/api';
 }
 
@@ -67,8 +68,9 @@ export class ApiClient {
         headers: reqHeaders,
       });
     } catch (primaryError: any) {
-      // Automatic Cloud Failover: if same-origin /api or primary fetch fails, retry directly against live Back4App URL
-      if (!url.startsWith(LIVE_BACKEND_URL) && typeof window !== 'undefined') {
+      // Cloud failover is a hosted-build safety net only. From a dev machine it would
+      // silently read and write the public Back4App dataset instead of the local one.
+      if (!url.startsWith(LIVE_BACKEND_URL) && typeof window !== 'undefined' && !isLocalDev()) {
         try {
           console.warn(`[ApiClient] Primary fetch failed (${primaryError.message}). Attempting direct failover to Back4App cloud backend...`);
           const fallbackUrl = `${LIVE_BACKEND_URL}${cleanEndpoint}`;
@@ -80,6 +82,9 @@ export class ApiClient {
           console.error(`[ApiClient Failover Error] ${endpoint}:`, fallbackError.message);
           throw new Error('Backend service is waking up. Please retry in a few moments.');
         }
+      } else if (isLocalDev()) {
+        console.error(`[ApiClient] Local ${cleanEndpoint} request failed:`, primaryError.message);
+        throw new Error('The local serverless API did not answer. Is `npm run dev` running on port 3000?');
       } else {
         throw new Error('Backend service is waking up. Please retry in a few moments.');
       }

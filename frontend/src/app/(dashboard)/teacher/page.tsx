@@ -23,7 +23,6 @@ import {
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
-import { QrDisplayModal } from '@/components/attendance/QrDisplayModal';
 import { QrCode } from 'lucide-react';
 import { realtimeSync } from '@/lib/realtime';
 
@@ -33,7 +32,6 @@ export default function TeacherDashboard() {
   const [pendingRegistrations, setPendingRegistrations] = useState<Registration[]>([]);
   const [myActivities, setMyActivities] = useState<Activity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
 
   const loadData = () => {
     setIsLoading(true);
@@ -93,13 +91,14 @@ export default function TeacherDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            <Button
-              onClick={() => setIsQrModalOpen(true)}
-              size="sm"
-              className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/25 border-0 hover:scale-[1.02] transition-transform"
-            >
-              <QrCode className="mr-1.5 h-4 w-4" /> Launch Live QR
-            </Button>
+            <Link href="/teacher/attendance?live=1">
+              <Button
+                size="sm"
+                className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/25 border-0 hover:scale-[1.02] transition-transform"
+              >
+                <QrCode className="mr-1.5 h-4 w-4" /> Launch Live QR
+              </Button>
+            </Link>
             <Link href="/teacher/activities">
               <Button size="sm" className="bg-sky-500 hover:bg-sky-600 font-bold shadow-lg shadow-sky-500/25 border-0 hover:scale-[1.02] transition-transform">
                 <PlusCircle className="mr-1.5 h-4 w-4" /> Create Activity
@@ -252,13 +251,6 @@ export default function TeacherDashboard() {
           </div>
         </div>
       </div>
-      {/* Direct Live Session QR Modal */}
-      <QrDisplayModal
-        isOpen={isQrModalOpen}
-        onClose={() => setIsQrModalOpen(false)}
-        sessionId="ses-01"
-        sessionTitle="Centrala High Club Session & Roll Call"
-      />
     </div>
   );
 }

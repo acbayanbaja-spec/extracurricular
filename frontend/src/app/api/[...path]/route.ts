@@ -817,22 +817,48 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
         [sessionId]
       );
 
-      // Query registered students — every learner on the roster, whatever their approval state
+      // Query registered students — every learner on the roster, whatever their approval state.
+      // Driven from `students` with LEFT JOINs so a completed check-in can never be invisible:
+      // a learner shows up if they registered OR already have a record for this session.
       let records: any[] = [];
       if (session) {
         records = await serverDb.query(
           `SELECT s.id as student_id, s.student_id_number, s.grade_level, s.section, s.track_strand,
-                  u.first_name, u.last_name, u.email, u.avatar_url,
-                  r.status as enrolment_status, r.id as registration_id,
-                  ar.id as record_id, COALESCE(ar.status, 'Absent') as status, ar.check_in_time, ar.check_in_method, ar.notes
-           FROM registrations r
-           JOIN students s ON r.student_id = s.id
-           JOIN users u ON s.user_id = u.id
-           LEFT JOIN attendance_records ar ON ar.session_id = ? AND ar.student_id = s.id
-           WHERE r.activity_id = ?
-           ORDER BY (r.status IN ('Approved', 'Completed')) DESC, u.last_name ASC`,
-          [sessionId, session.activity_id]
+                  COALESCE(NULLIF(u.first_name, ''), NULLIF(r.participant_name, ''), 'Learner') as first_name,
+                  COALESCE(NULLIF(u.last_name, ''), '') as last_name,
+                  u.email, u.avatar_url,
+                  COALESCE(r.status, 'Walk-in') as enrolment_status, r.id as registration_id,
+                  ar.id as record_id, COALESCE(ar.status, 'Absent') as status,
+                  ar.check_in_time, ar.check_in_method, ar.notes
+           FROM students s
+           LEFT JOIN users u ON s.user_id = u.id
+           LEFT JOIN registrations r ON r.student_id = s.id AND r.activity_id = ?
+           LEFT JOIN attendance_records ar ON ar.student_id = s.id AND ar.session_id = ?
+           WHERE r.id IS NOT NULL OR ar.id IS NOT NULL
+           ORDER BY (COALESCE(r.status, '') IN ('Approved', 'Completed')) DESC NULLS LAST,
+                    (COALESCE(ar.status, '') IN ('Present', 'Late')) DESC NULLS LAST,
+                    COALESCE(NULLIF(u.last_name, ''), s.student_id_number) ASC,
+                    COALESCE(NULLIF(u.first_name, ''), '') ASC`,
+          [session.activity_id, sessionId]
         );
+      }
+
+      // Scans recorded on other sessions of the same activity, so a learner who checked
+      // in elsewhere is explained instead of looking like it vanished.
+      const siblingSessions: any[] = [];
+      if (session) {
+        const others = await serverDb.query(
+          `SELECT s.id, s.session_title, s.session_date,
+                  (SELECT COUNT(*) FROM attendance_records ar
+                   WHERE ar.session_id = s.id AND ar.status IN ('Present', 'Late')) as present_count
+           FROM attendance_sessions s
+           WHERE s.activity_id = ? AND s.id <> ?`,
+          [session.activity_id, sessionId]
+        );
+        for (const o of others) {
+          const count = Number(o.present_count || 0);
+          if (count > 0) siblingSessions.push({ id: o.id, session_title: o.session_title, session_date: o.session_date, present_count: count });
+        }
       }
 
       return NextResponse.json({
@@ -840,6 +866,7 @@ export async function GET(request: NextRequest, { params }: { params: { path: st
         data: {
           session,
           records,
+          siblingSessions,
         },
       });
     }
@@ -1532,10 +1559,11 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
       const token = `SES-QR-${Date.now().toString().slice(-6)}`;
       const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
 
+      const sessionCreator = getAuthUser(request)?.userId || 'usr-teacher-01';
       await serverDb.run(
         `INSERT INTO attendance_sessions (id, activity_id, session_title, session_date, start_time, end_time, qr_code_token, qr_expires_at, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'usr-teacher-01')`,
-        [sessionId, activityId, sessionTitle, sessionDate, startTime, endTime, token, expiresAt]
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [sessionId, activityId, sessionTitle, sessionDate, startTime, endTime, token, expiresAt, sessionCreator]
       );
 
       return NextResponse.json({
